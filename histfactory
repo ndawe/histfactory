@@ -1,0 +1,87 @@
+#!/usr/bin/env python
+
+import rootpy; rootpy.log.basic_config_colorized()
+from rootpy.io import root_open
+from rootpy.utils.silence import silence_sout
+import logging; log = logging.getLogger('histfactory')
+
+
+def is_signal(sample):
+    for norm in sample.GetNormFactorList():
+        if norm.name == 'SigXsecOverSM':
+            return True
+    return False
+
+
+def write_measurement(m, output_suffix=None):
+    output_name = m.name
+    if output_suffix is not None:
+        output_name += '_{0}'.format(output_suffix)
+    root_output = 'ws_{0}.root'.format(output_name)
+    xml_output = 'xml_{0}'.format(output_name)
+    with root_open(root_output, 'recreate') as out:
+        log.info("writing {0} ...".format(root_output))
+        with silence_sout():
+            m.writeToFile(out)
+        # get modified measurement
+        out_m = out[m.name]
+        log.info("writing xml in {0} ...".format(xml_output))
+        with silence_sout():
+            out_m.PrintXML(xml_output)
+
+
+def process_measurement(m):
+    for c in m.GetChannels():
+        for s in c.GetSamples():
+            print s.name, is_signal(s)
+            #s.GetHistoSysList()
+            #s.GetNormFactorList()
+            #s.GetOverallSysList()
+        
+
+if __name__ == '__main__':
+    
+    from rootpy.extern.argparse import ArgumentParser
+
+    parser = ArgumentParser()
+    parser.add_argument('--kylefix', action='store_true', default=False)
+    parser.add_argument('--kylefix-samples', nargs='*')
+    parser.add_argument('--kylefix-categories', nargs='*')
+    parser.add_argument('--rebin', type=int, default=1)
+    parser.add_argument('--rebin-categories', nargs='*')
+    parser.add_argument('--merge-bins', nargs='*')
+    parser.add_argument('--merge-bins-categories', nargs='*')
+    parser.add_argument('--smooth-histosys', action='store_true', default=False)
+    parser.add_argument('--smooth-histosys-iterations', type=int, default=1)
+    parser.add_argument('--smooth-histosys-categories', nargs='*')
+    parser.add_argument('--prune-histosys', action='store_true', default=False)
+    parser.add_argument('--prune-overallsys', action='store_true', default=False)
+    parser.add_argument('--output-suffix', default=None)
+    parser.add_argument('xmlfile')
+    args = parser.parse_args()
+    
+    if args.merge_bins:
+        args.merge_bins = [
+            map(int, token.split('-')) for token in args.merge_bins]
+    
+    log.info("loading RooStats ...")
+    with silence_sout():
+        from rootpy.stats.histfactory import measurements_from_xml
+
+    meas = measurements_from_xml(args.xmlfile, silence=True)
+
+    for m in meas:
+        process_measurement(m,
+            kylefix=args.kylefix,
+            kylefix_samples=args.kylefix_samples,
+            kylefix_categories=args.kylefix_categories,
+            rebin=args.rebin,
+            rebin_categories=args.rebin_categories,
+            merge_bins=args.merge_bins,
+            merge_bins_categories=args.merge_bins_categories,
+            smooth_histosys=args.smooth_histosys,
+            smooth_histosys_iterations=args.smooth_histosys_iterations,
+            smooth_histosys_categories=args.smooth_histosys_categories,
+            prune_histosys=args.prune_histosys,
+            prune_overallsys=args.prune_overallsys)
+        write_measurement(m, output_suffix=args.output_suffix)
