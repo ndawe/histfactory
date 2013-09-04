@@ -30,13 +30,16 @@ def write_measurement(m, output_suffix=None):
             out_m.PrintXML(xml_output)
 
 
-def process_measurement(m):
+def process_measurement(m, **kwargs):
     for c in m.GetChannels():
+        log.info("processing measurement `{0}` channel `{1}` ...".format(
+            m.name, c.name))
         for s in c.GetSamples():
-            print s.name, is_signal(s)
+            #print s.name, is_signal(s)
             #s.GetHistoSysList()
             #s.GetNormFactorList()
             #s.GetOverallSysList()
+            pass
         
 
 if __name__ == '__main__':
@@ -67,7 +70,8 @@ if __name__ == '__main__':
     log.info("loading RooStats ...")
     with silence_sout():
         from rootpy.stats.histfactory import measurements_from_xml
-
+    
+    log.info("reading XML ...")
     meas = measurements_from_xml(args.xmlfile, silence=True)
 
     for m in meas:
