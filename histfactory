@@ -2,8 +2,131 @@
 
 import rootpy; rootpy.log.basic_config_colorized()
 from rootpy.io import root_open
+from rootpy.plotting import Hist
 from rootpy.utils.silence import silence_sout
 import logging; log = logging.getLogger('histfactory')
+from math import sqrt
+
+
+def uniform_binning(hist):
+    """ 
+    For some obscure technical reason, HistFactory can't handle histograms with
+    variable width bins. This function takes any histogram and outputs a new
+    histogram with constant width bins along all axes by using the bin indices
+    of the input histogram as the x-axis of the new histogram.
+    """
+    llog = log['uniform_binning']
+    if hist.GetDimension() == 1:
+        new_hist = Hist(hist.GetNbinsX(), 0, hist.GetNbinsX(),
+                        name=hist.name + '_uniform_binning', type=hist.TYPE)
+    elif hist.GetDimension() == 2:
+        new_hist = Hist2D(hist.GetNbinsX(), 0, hist.GetNbinsX(),
+                          hist.GetNbinsY(), 0, hist.GetNbinsY(),
+                          name=hist.name + '_uniform_binning', type=hist.TYPE)
+    elif hist.GetDimension() == 3:
+        new_hist = Hist3D(hist.GetNbinsX(), 0, hist.GetNbinsX(),
+                          hist.GetNbinsY(), 0, hist.GetNbinsY(),
+                          hist.GetNbinsZ(), 0, hist.GetNbinsZ(),
+                          name=hist.name + '_uniform_binning', type=hist.TYPE)
+    else:
+        raise TypeError(
+            "unable to apply uniform binning on object "
+            "of type {0}".format(type(hist)))
+    # copy over the bin contents and errors
+    for outbin, inbin in zip(new_hist.bins(), hist.bins()):
+        outbin.value = inbin.value
+        outbin.error = inbin.error
+    return new_hist
+
+
+def zero_negs(hist):
+    """ 
+    Return a clone of this histogram with all negative bins set to zero. The
+    errors of these bins are left untouched.
+    """
+    llog = log['zero_negs']
+    new_hist = copy(hist, hist.name + '_nonegs')
+    for bin in new_hist.bins():
+        if bin.value < 0:
+            llog.warning("zeroing negative bin %d in %s" %
+                         (bin.idx, hist.name))
+            bin.value = 0.
+    return new_hist
+
+
+def merge_bins(hist, bin_ranges, axis=0):
+    """
+    Merge ranges of bins by bin indices.
+    `bin_ranges` is a list of 2-tuples of bin index ranges.
+    `axis` is the axis along which to merge the bins (0, 1, or 2)
+    """
+    new_hist = hist.merge_bins(bin_ranges, axis=axis)
+    new_hist.name = hist.name + '_merged'
+    return new_hist
+
+
+def shape_is_significant(total, high, low, thresh=0.1):
+    """
+    For a given shape systematic for background-X, calculate
+    s_i=|up_i-down_i|/stat_totBckg_i, where up_i is up variation in bin-i,
+    down_i is down variation in bin-I, stat_totBckg_i is statistical
+    uncertainty for total background prediction in bin-i. If max(s_i)<0.1,
+    then drop this shape systematic for background-X
+    """
+    for bin_total, bin_high, bin_low in zip(
+            total.bins(), high.bins(), low.bins()):
+        diff = abs(bin_high.value - bin_low.value)
+        if bin_total.error == 0:
+            if diff != 0:
+                return True
+            continue
+        sig = abs(bin_high.value - bin_low.value) / bin_total.error
+        if sig > thresh:
+            return True
+    return False
+
+
+def smooth_shape(nominal, high, low, iterations=1):
+    """
+    Smooth shape systematics with respect to the nominal histogram by applying
+    TH1::Smooth() on the ratio of systematic / nominal.
+    """
+    ratio_high = high / nominal
+    ratio_low = low / nominal
+    ratio_high.Smooth(iterations)
+    ratio_low.Smooth(iterations)
+    return ratio_high * nominal, ratio_low * nominal
+
+
+def apply_kylefix(hist):
+    """
+    Return a clone of the input histogram where the empty bins have been filled
+    with the average weight and the errors of these bins set to sqrt(<w^2>).
+    If no bins were altered, then return the original histogram
+    """
+    llog = log['kylefix']
+    fixed_hist = hist.Clone(name=hist.name + '_kylefix', shallow=True)
+
+    sumW2TotBin = sum([bin.error**2 for bin in hist.bins()])
+    avWeightBin = hist.GetSumOfWeights() / hist.GetEntries()
+    avW2Bin = sumW2TotBin / hist.GetEntries()
+
+    # now fill empty bins
+    applied = False
+    for bin in fixed_hist.bins():
+        if bin.value < 1E-6:
+            llog.warning(
+                "filling empty or negative bin {0:d} in {1}".format(
+                    bin.idx, hist.name))
+            # binContent = avWeight [or avWeightbin]
+            bin.value = avWeightBin
+            # binError = sqrt(avW2) [or sqrt(avW2Bin)]
+            bin.error = sqrt(avW2Bin)
+            applied = True
+    
+    if applied:
+        return fixed_hist
+    return hist
 
 
 def is_signal(sample):
@@ -21,8 +144,8 @@ def write_measurement(m, output_suffix=None):
     xml_output = 'xml_{0}'.format(output_name)
     with root_open(root_output, 'recreate') as out:
         log.info("writing {0} ...".format(root_output))
-        with silence_sout():
-            m.writeToFile(out)
+        #with silence_sout():
+        m.writeToFile(out)
         # get modified measurement
         out_m = out[m.name]
         log.info("writing xml in {0} ...".format(xml_output))
@@ -30,16 +153,33 @@ def write_measurement(m, output_suffix=None):
             out_m.PrintXML(xml_output)
 
 
-def process_measurement(m, **kwargs):
-    for c in m.GetChannels():
-        log.info("processing measurement `{0}` channel `{1}` ...".format(
-            m.name, c.name))
-        for s in c.GetSamples():
-            #print s.name, is_signal(s)
+def process_measurement(m,
+                        kylefix=False,
+                        kylefix_samples=None,
+                        kylefix_channels=None,
+                        rebin=1,
+                        rebin_channels=None,
+                        merge_bins=None,
+                        merge_bins_channels=None,
+                        smooth_histosys=False,
+                        smooth_histosys_iterations=1,
+                        smooth_histosys_channels=None,
+                        prune_histosys=False,
+                        prune_overallsys=False):
+
+    for c in m.channels:
+        for s in c.samples:
+            log.info(
+                "processing measurement `{0}` channel `{1}` "
+                "sample `{2}` ...".format(
+                    m.name, c.name, s.name))
+            if kylefix and not is_signal(s):
+                s.hist = apply_kylefix(s.hist)
+                for histosys in s.histo_sys:
+                    histosys.high = apply_kylefix(histosys.high)
+                    histosys.low = apply_kylefix(histosys.low)
             #s.GetHistoSysList()
-            #s.GetNormFactorList()
             #s.GetOverallSysList()
-            pass
         
 
 if __name__ == '__main__':
@@ -49,14 +189,14 @@ if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--kylefix', action='store_true', default=False)
     parser.add_argument('--kylefix-samples', nargs='*')
-    parser.add_argument('--kylefix-categories', nargs='*')
+    parser.add_argument('--kylefix-channels', nargs='*')
     parser.add_argument('--rebin', type=int, default=1)
-    parser.add_argument('--rebin-categories', nargs='*')
+    parser.add_argument('--rebin-channels', nargs='*')
     parser.add_argument('--merge-bins', nargs='*')
-    parser.add_argument('--merge-bins-categories', nargs='*')
+    parser.add_argument('--merge-bins-channels', nargs='*')
     parser.add_argument('--smooth-histosys', action='store_true', default=False)
     parser.add_argument('--smooth-histosys-iterations', type=int, default=1)
-    parser.add_argument('--smooth-histosys-categories', nargs='*')
+    parser.add_argument('--smooth-histosys-channels', nargs='*')
     parser.add_argument('--prune-histosys', action='store_true', default=False)
     parser.add_argument('--prune-overallsys', action='store_true', default=False)
     parser.add_argument('--output-suffix', default=None)
@@ -78,14 +218,14 @@ if __name__ == '__main__':
         process_measurement(m,
             kylefix=args.kylefix,
             kylefix_samples=args.kylefix_samples,
-            kylefix_categories=args.kylefix_categories,
+            kylefix_channels=args.kylefix_channels,
             rebin=args.rebin,
-            rebin_categories=args.rebin_categories,
+            rebin_channels=args.rebin_channels,
             merge_bins=args.merge_bins,
-            merge_bins_categories=args.merge_bins_categories,
+            merge_bins_channels=args.merge_bins_channels,
             smooth_histosys=args.smooth_histosys,
             smooth_histosys_iterations=args.smooth_histosys_iterations,
-            smooth_histosys_categories=args.smooth_histosys_categories,
+            smooth_histosys_channels=args.smooth_histosys_channels,
             prune_histosys=args.prune_histosys,
             prune_overallsys=args.prune_overallsys)
         write_measurement(m, output_suffix=args.output_suffix)
