@@ -18,13 +18,17 @@ Installation
 
       svn checkout https://github.com/rootpy/rootpy/trunk rootpy
 
-   Then install::
+3. Then install rootpy::
 
       cd rootpy
       ./setup.py install --user
 
+   See notes about setting up `rootpy on CERN's LXPLUS
+   <https://github.com/rootpy/rootpy#try-rootpy-on-cerns-lxplus>`_ if you have
+   trouble.
 
-3. Download the script::
+
+4. Download the script::
 
     curl -O https://raw.github.com/ndawe/histfactory/master/histfactory
     chmod +x histfactory
