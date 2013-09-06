@@ -45,16 +45,20 @@ def zero_negs(hist):
     errors of these bins are left untouched.
     """
     llog = log['zero_negs']
-    new_hist = copy(hist, hist.name + '_nonegs')
+    new_hist = hist.Clone(name=hist.name + '_nonegs', shallow=True)
+    applied = False
     for bin in new_hist.bins():
         if bin.value < 0:
+            applied = True
             llog.warning("zeroing negative bin %d in %s" %
                          (bin.idx, hist.name))
             bin.value = 0.
-    return new_hist
+    if applied:
+        return new_hist
+    return hist
 
 
-def merge_bins(hist, bin_ranges, axis=0):
+def apply_merge_bins(hist, bin_ranges, axis=0):
     """
     Merge ranges of bins by bin indices.
     `bin_ranges` is a list of 2-tuples of bin index ranges.
@@ -62,6 +66,15 @@ def merge_bins(hist, bin_ranges, axis=0):
     """
     new_hist = hist.merge_bins(bin_ranges, axis=axis)
     new_hist.name = hist.name + '_merged'
+    return new_hist
+
+
+def apply_rebin(hist, n):
+    
+    if n < 2:
+        return hist
+    new_hist = hist.Clone(name=hist.name + '_rebin_{0:d}'.format(n), shallow=True)
+    new_hist.Rebin(n)
     return new_hist
 
 
@@ -144,8 +157,8 @@ def write_measurement(m, output_suffix=None):
     xml_output = 'xml_{0}'.format(output_name)
     with root_open(root_output, 'recreate') as out:
         log.info("writing {0} ...".format(root_output))
-        #with silence_sout():
-        m.writeToFile(out)
+        with silence_sout():
+            m.writeToFile(out)
         # get modified measurement
         out_m = out[m.name]
         log.info("writing xml in {0} ...".format(xml_output))
@@ -168,19 +181,40 @@ def process_measurement(m,
                         prune_overallsys=False):
 
     for c in m.channels:
-        for s in c.samples:
-            log.info(
-                "processing measurement `{0}` channel `{1}` "
-                "sample `{2}` ...".format(
-                    m.name, c.name, s.name))
-            if kylefix and not is_signal(s):
-                s.hist = apply_kylefix(s.hist)
+        log.info(
+            "processing measurement `{0}` channel `{1}` ...".format(
+                m.name, c.name))
+        if rebin != 1 and (not rebin_channels or c.name in rebin_channels):
+            for s in c.samples:
+                log.info("applying rebinning {0:d} on sample `{1}`".format(rebin, s.name))
+                s.hist = apply_rebin(s.hist, rebin)
                 for histosys in s.histo_sys:
-                    histosys.high = apply_kylefix(histosys.high)
-                    histosys.low = apply_kylefix(histosys.low)
-            #s.GetHistoSysList()
-            #s.GetOverallSysList()
-        
+                    histosys.high = apply_rebin(histosys.high, rebin)
+                    histosys.low = apply_rebin(histosys.low, rebin)
+        if merge_bins and (not merge_bins_channels or c.name in merge_bins_channels):
+            for s in c.samples:
+                log.info("merging bins {0} in sample `{1}`".format(merge_bins, s.name))
+                s.hist = apply_merge_bins(s.hist, merge_bins)
+                for histosys in s.histo_sys:
+                    histosys.high = apply_merge_bins(histosys.high, merge_bins)
+                    histosys.low = apply_merge_bins(histosys.low, merge_bins)
+        if kylefix and (not kylefix_channels or c.name in kylefix_channels):
+            for s in c.samples:
+                if kylefix_samples and s.name not in kylefix_samples:
+                    continue
+                if not is_signal(s):
+                    log.info("applying kylefix on sample `{0}`".format(s.name))
+                    s.hist = apply_kylefix(s.hist)
+                    for histosys in s.histo_sys:
+                        histosys.high = apply_kylefix(histosys.high)
+                        histosys.low = apply_kylefix(histosys.low)
+        # fixes that should always be applied
+        for s in c.samples:
+            s.hist = uniform_binning(zero_negs(s.hist))
+            for histosys in s.histo_sys:
+                histosys.high = uniform_binning(zero_negs(histosys.high))
+                histosys.low = uniform_binning(zero_negs(histosys.low))
+
 
 if __name__ == '__main__':
     
@@ -205,7 +239,7 @@ if __name__ == '__main__':
     
     if args.merge_bins:
         args.merge_bins = [
-            map(int, token.split('-')) for token in args.merge_bins]
+            map(int, token.split(':')) for token in args.merge_bins]
     
     log.info("loading RooStats ...")
     with silence_sout():
