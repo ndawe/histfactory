@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import ROOT
 import rootpy; rootpy.log.basic_config_colorized()
 from rootpy.io import root_open
 from rootpy.plotting import Hist
@@ -18,10 +19,14 @@ def process_measurement(m,
                         merge_bins=None,
                         merge_bins_channels=None,
                         smooth_histosys=False,
-                        smooth_histosys_iterations=1,
                         smooth_histosys_channels=None,
+                        smooth_histosys_iterations=1,
                         prune_histosys=False,
+                        prune_histosys_channels=None,
+                        prune_histosys_method='max',
+                        prune_histosys_threshold=10.,
                         prune_overallsys=False,
+                        prune_overallsys_channels=None,
                         prune_overallsys_threshold=0.5):
 
     for c in m.channels:
@@ -36,6 +41,7 @@ def process_measurement(m,
                 for histosys in s.histo_sys:
                     histosys.high = apply_rebin(histosys.high, rebin)
                     histosys.low = apply_rebin(histosys.low, rebin)
+
         # merge bins
         if merge_bins and (not merge_bins_channels or c.name in merge_bins_channels):
             for s in c.samples:
@@ -46,6 +52,7 @@ def process_measurement(m,
                 for histosys in s.histo_sys:
                     histosys.high = apply_merge_bins(histosys.high, merge_bins)
                     histosys.low = apply_merge_bins(histosys.low, merge_bins)
+
         # apply kylefix
         if kylefix and (not kylefix_channels or c.name in kylefix_channels):
             for s in c.samples:
@@ -57,19 +64,125 @@ def process_measurement(m,
                     for histosys in s.histo_sys:
                         histosys.high = apply_kylefix(histosys.high)
                         histosys.low = apply_kylefix(histosys.low)
-        # prune overallsys
+
         # smooth
         if smooth_histosys and (not smooth_histosys_channels or c.name in smooth_histosys_channels):
             for s in c.samples:
                 for histosys in s.histo_sys:
                     smooth_shape(s.hist, histosys, smooth_histosys_iterations)
+
         # prune shapes
+        if prune_histosys and (not prune_histosys_channels or c.name in prune_histosys_channels):
+            total_bkg = sum([s.hist for s in c.samples if not is_signal(s)])
+            for s in c.samples:
+                # don't prune shapes from signal
+                if is_signal(s):
+                    continue
+
+                names = []
+                if prune_histosys_method == 'max':
+                    for histosys in s.histo_sys:
+                        if not shape_is_significant(total_bkg, histosys.high, histosys.low, prune_histosys_threshold):
+                            names.append(histosys.name)
+
+                elif prune_histosys_method == 'chi2':
+                    for histosys in s.histo_sys:
+                        if not chi2_test(s.hist, histosys.high, histosys.low, prune_histosys_threshold):
+                            names.append(histosys.name)
+
+                elif prune_histosys_method == 'ks':
+                    for histosys in s.histo_sys:
+                        if (histosys.high.KolmogorovTest(s.hist) < prune_histosys_threshold and
+                            histosys.low.KolmogorovTest(s.hist) < prune_histosys_threshold):
+                            names.append(histosys.name)
+                
+                for name in names:
+                    log.info("removing HistoSys {0} from sample {1} using method '{2}'".format(
+                        name, s.name, prune_histosys_method))
+                    s.RemoveHistoSys(name)
+
+        # prune overallsys
+        if prune_overallsys and (not prune_overallsys_channels or c.name in prune_overallsys_channels):
+            for s in c.samples:
+                names = []
+                for overallsys in s.overall_sys:
+                    if (abs(overallsys.high - 1.) * 100. < prune_overallsys_threshold and
+                        abs(overallsys.low - 1.) * 100. < prune_overallsys_threshold):
+                        names.append(overallsys.name)
+                for name in names:
+                    log.info("removing OverallSys {0} from sample {1}".format(name, s.name))
+                    s.RemoveOverallSys(name)
+
         # fixes that should always be applied
         for s in c.samples:
             s.hist = uniform_binning(zero_negs(s.hist))
             for histosys in s.histo_sys:
                 histosys.high = uniform_binning(zero_negs(histosys.high))
                 histosys.low = uniform_binning(zero_negs(histosys.low))
+
+
+def chi2_test(nom, up, down, threshold):
+    """
+    Calculate the Chi^2 of the up and down variations and return True the
+    variations are significant given a threshold on the minimum Chi^2 value.
+    """
+    chi2up = 0.
+    chi2dn = 0.
+    nbin = nom.GetNbinsX()
+    for ib in range(1, nbin + 1):
+        n = nom.GetBinContent(ib)
+        u = up.GetBinContent(ib)
+        d = down.GetBinContent(ib)
+        eup = max(nom.GetBinError(ib), up.GetBinError(ib))
+        edn = max(nom.GetBinError(ib), down.GetBinError(ib))
+        if not (n > 0. and eup > 0. and edn > 0.):
+            continue
+        chi2up += ((u - n) / eup) ** 2.
+        chi2dn += ((d - n) / edn) ** 2.
+    chi2up = ROOT.TMath.Prob(chi2up, nbin)
+    chi2dn = ROOT.TMath.Prob(chi2dn, nbin)
+    # return True if the shape should be kept
+    return min(chi2up, chi2dn) < threshold
+
+
+def shape_is_significant(total, high, low, thresh=0.1):
+    """
+    For a given shape systematic for background-X, calculate
+    s_i=|up_i-down_i|/stat_totBckg_i, where up_i is up variation in bin-i,
+    down_i is down variation in bin-I, stat_totBckg_i is statistical
+    uncertainty for total background prediction in bin-i. If max(s_i)<0.1,
+    then drop this shape systematic for background-X
+    """
+    for bin_total, bin_high, bin_low in zip(
+            total.bins(), high.bins(), low.bins()):
+        diff = abs(bin_high.value - bin_low.value)
+        if bin_total.error == 0:
+            if diff != 0:
+                return True
+            continue
+        sig = abs(bin_high.value - bin_low.value) / bin_total.error
+        if sig > thresh:
+            return True
+    return False
+
+
+def smooth_shape(nominal, histosys, iterations=1):
+    """
+    Smooth shape systematics with respect to the nominal histogram by applying
+    TH1::Smooth() on the ratio of systematic / nominal.
+    """
+    llog = log['smooth_shape']
+    llog.info("smoothing HistoSys {0}".format(histosys.name))
+    high_name = histosys.high.name + '_smoothed_{0}'.format(iterations)
+    low_name = histosys.low.name + '_smoothed_{0}'.format(iterations)
+    ratio_high = histosys.high / nominal
+    ratio_low = histosys.low / nominal
+    ratio_high.Smooth(iterations)
+    ratio_low.Smooth(iterations)
+    histosys.high = ratio_high * nominal
+    histosys.low = ratio_low * nominal
+    histosys.high.name = high_name
+    histosys.low.name = low_name
 
 
 def uniform_binning(hist):
@@ -151,42 +264,6 @@ def apply_rebin(hist, n):
     return new_hist
 
 
-def shape_is_significant(total, high, low, thresh=0.1):
-    """
-    For a given shape systematic for background-X, calculate
-    s_i=|up_i-down_i|/stat_totBckg_i, where up_i is up variation in bin-i,
-    down_i is down variation in bin-I, stat_totBckg_i is statistical
-    uncertainty for total background prediction in bin-i. If max(s_i)<0.1,
-    then drop this shape systematic for background-X
-    """
-    for bin_total, bin_high, bin_low in zip(
-            total.bins(), high.bins(), low.bins()):
-        diff = abs(bin_high.value - bin_low.value)
-        if bin_total.error == 0:
-            if diff != 0:
-                return True
-            continue
-        sig = abs(bin_high.value - bin_low.value) / bin_total.error
-        if sig > thresh:
-            return True
-    return False
-
-
-def smooth_shape(nominal, histosys, iterations=1):
-    """
-    Smooth shape systematics with respect to the nominal histogram by applying
-    TH1::Smooth() on the ratio of systematic / nominal.
-    """
-    llog = log['smooth_shape']
-    llog.info("smoothing HistoSys {0}".format(histosys.name))
-    ratio_high = histosys.high / nominal
-    ratio_low = histosys.low / nominal
-    ratio_high.Smooth(iterations)
-    ratio_low.Smooth(iterations)
-    histosys.high = ratio_high * nominal
-    histosys.low = ratio_low * nominal
-
-
 def apply_kylefix(hist):
     """
     Return a clone of the input histogram where the empty bins have been filled
@@ -248,17 +325,20 @@ if __name__ == '__main__':
     
     parser = argparse.ArgumentParser(
         description="Apply common operations on an existing HistFactory workspace")
+
     parser.add_argument('--kylefix', action='store_true', default=False,
         help="Enable application of the KyleFix on background samples")
     parser.add_argument('--kylefix-samples', nargs='*',
         help="Restrict application of KyleFix to these samples (default: all samples)")
     parser.add_argument('--kylefix-channels', nargs='*',
         help="Restrict application of KyleFix to these channels (default: all channels)")
+
     parser.add_argument('--rebin', type=int, default=1,
         help="Rebin histograms by grouping each N bins. "
              "Use --rebin 2 to merge every group of 2 bins (default: no rebinning)")
     parser.add_argument('--rebin-channels', nargs='*',
         help="Restrict the rebinning to these channels (default: all channels)")
+
     parser.add_argument('--merge-bins', nargs='*',
         help="Merge bins by ranges of bin indices. "
              "For example, use 1:-12 to merge left bins such that 10 bins on the right "
@@ -267,6 +347,7 @@ if __name__ == '__main__':
              "that bin index ranges are inclusive of the low and high indices. (default: do not merge bins)")
     parser.add_argument('--merge-bins-channels', nargs='*',
         help="Restrict bin merging to these channels (default: all channels)")
+
     parser.add_argument('--smooth-histosys', action='store_true', default=False,
         help="Smooth HistoSys histograms (default: False)")
     parser.add_argument('--smooth-histosys-iterations', type=int, default=1,
@@ -274,16 +355,28 @@ if __name__ == '__main__':
              "smoothing HistoSys (default: 1)")
     parser.add_argument('--smooth-histosys-channels', nargs='*',
         help="Restrict HistoSys smoothing to these channels (default: all channels)")
+
     parser.add_argument('--prune-histosys', action='store_true', default=False,
         help="Enable HistoSys pruning")
+    parser.add_argument('--prune-histosys-channels', nargs='*',
+        help="Restrict HistoSys smoothing to these channels (default: all channels)")
+    parser.add_argument('--prune-histosys-method', choices=('max', 'chi2', 'ks'), default='max',
+        help="HistoSys pruning method. Choices: max, chi2, ks (default: max)")
+    parser.add_argument('--prune-histosys-threshold', type=float, default=10.,
+        help="Threshold on HistoSys pruning method determing if shape is significant (default: 10.)")
+
     parser.add_argument('--prune-overallsys', action='store_true', default=False,
         help="Enable OverallSys pruning")
+    parser.add_argument('--prune-overallsys-channels', nargs='*',
+        help="Restrict OverallSys smoothing to these channels (default: all channels)")
     parser.add_argument('--prune-overallsys-threshold', type=float, default=0.5,
         help="Threshold [%%] below which OverallSys components are dropped (default: 0.5)")
+
     parser.add_argument('--output-suffix', default=None,
         help="The output ROOT file and directory containing the XML "
              "will have the same names as the measurement names. You "
              "may optionally add a suffix to these names with this option.")
+
     parser.add_argument('xmlfile')
     args = parser.parse_args()
     
@@ -311,6 +404,10 @@ if __name__ == '__main__':
             smooth_histosys_iterations=args.smooth_histosys_iterations,
             smooth_histosys_channels=args.smooth_histosys_channels,
             prune_histosys=args.prune_histosys,
+            prune_histosys_channels=args.prune_histosys_channels,
+            prune_histosys_method=args.prune_histosys_method,
+            prune_histosys_threshold=args.prune_histosys_threshold,
             prune_overallsys=args.prune_overallsys,
+            prune_overallsys_channels=args.prune_overallsys_channels,
             prune_overallsys_threshold=args.prune_overallsys_threshold)
         write_measurement(m, output_suffix=args.output_suffix)
