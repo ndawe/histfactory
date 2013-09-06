@@ -136,7 +136,7 @@ def chi2_test(nom, up, down, threshold):
     chi2up = 0.
     chi2dn = 0.
     nbin = 0
-    for nom_bin, up_bin, down_bin in zip(
+    for nom_bin, up_bin, down_bin in izip(
             nom.bins(overflow=False),
             up.bins(overflow=False),
             down.bins(overflow=False)):
