@@ -182,8 +182,7 @@ def smooth_shape(nominal, histosys, iterations=1):
     Smooth shape systematics with respect to the nominal histogram by applying
     TH1::Smooth() on the ratio of systematic / nominal.
     """
-    llog = log['smooth_shape']
-    llog.info("smoothing HistoSys `{0}`".format(histosys.name))
+    log.info("smoothing HistoSys `{0}`".format(histosys.name))
     high_name = histosys.high.name + '_smoothed_{0}'.format(iterations)
     low_name = histosys.low.name + '_smoothed_{0}'.format(iterations)
     ratio_high = histosys.high / nominal
@@ -205,8 +204,7 @@ def uniform_binning(hist):
     """
     if hist.uniform():
         return hist
-    llog = log['uniform_binning']
-    llog.info("converting histogram `{0}` to uniform binning".format(hist.name))
+    log.info("converting histogram `{0}` to uniform binning".format(hist.name))
     if hist.GetDimension() == 1:
         new_hist = Hist(
             hist.GetNbinsX(), 0, hist.GetNbinsX(),
@@ -238,13 +236,12 @@ def zero_negs(hist):
     Return a clone of this histogram with all negative bins set to zero. The
     errors of these bins are left untouched.
     """
-    llog = log['zero_negs']
     new_hist = hist.Clone(name=hist.name + '_nonegs', shallow=True)
     applied = False
     for bin in new_hist.bins():
         if bin.value < 0:
             applied = True
-            llog.warning(
+            log.warning(
                 "zeroing negative bin {0:d} in `{1}`".format(
                     bin.idx, hist.name))
             bin.value = 0.
@@ -281,7 +278,6 @@ def apply_kylefix(hist):
     with the average weight and the errors of these bins set to sqrt(<w^2>).
     If no bins were altered, then return the original histogram
     """
-    llog = log['kylefix']
     fixed_hist = hist.Clone(name=hist.name + '_kylefix', shallow=True)
 
     sumW2TotBin = sum([bin.error**2 for bin in hist.bins()])
@@ -292,8 +288,8 @@ def apply_kylefix(hist):
     applied = False
     for bin in fixed_hist.bins():
         if bin.value < 1E-6:
-            llog.warning(
-                "filling empty or negative bin {0:d} in `{1}`".format(
+            log.warning(
+                "kylefix is filling empty or negative bin {0:d} in `{1}`".format(
                     bin.idx, hist.name))
             # binContent = avWeight [or avWeightbin]
             bin.value = avWeightBin
