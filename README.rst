@@ -2,7 +2,15 @@
 histfactory
 ===========
 
-A script for common operations on HistFactory workspaces.
+A script for common operations on HistFactory workspaces. This script can:
+
+* apply the so-called "Kyle-fix" for low-stats background samples
+* rebin histograms
+* merge specific bins in histograms
+* smooth shape (HistoSys) systematics
+* prune normalization (OverallSys) systematics
+* prune shape (HistoSys) systematics by three separate methods (maximum
+  deviation relative to total background statistical uncertainty, Chi2, and KS)
 
 Installation
 ------------
