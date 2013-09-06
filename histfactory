@@ -24,7 +24,7 @@ def process_measurement(m,
                         prune_histosys=False,
                         prune_histosys_channels=None,
                         prune_histosys_method='max',
-                        prune_histosys_threshold=10.,
+                        prune_histosys_threshold=0.1,
                         prune_overallsys=False,
                         prune_overallsys_channels=None,
                         prune_overallsys_threshold=0.5):
@@ -73,7 +73,11 @@ def process_measurement(m,
 
         # prune shapes
         if prune_histosys and (not prune_histosys_channels or c.name in prune_histosys_channels):
-            total_bkg = sum([s.hist for s in c.samples if not is_signal(s)])
+            
+            # total bkg needed for max method
+            if prune_histosys_method == 'max':
+                total_bkg = sum([s.hist.Clone(shallow=True) for s in c.samples if not is_signal(s)])
+
             for s in c.samples:
                 # don't prune shapes from signal
                 if is_signal(s):
@@ -142,7 +146,7 @@ def chi2_test(nom, up, down, threshold):
     chi2up = ROOT.TMath.Prob(chi2up, nbin)
     chi2dn = ROOT.TMath.Prob(chi2dn, nbin)
     # return True if the shape should be kept
-    return min(chi2up, chi2dn) < threshold
+    return min(chi2up, chi2dn) > threshold
 
 
 def shape_is_significant(total, high, low, thresh=0.1):
@@ -362,8 +366,8 @@ if __name__ == '__main__':
         help="Restrict HistoSys smoothing to these channels (default: all channels)")
     parser.add_argument('--prune-histosys-method', choices=('max', 'chi2', 'ks'), default='max',
         help="HistoSys pruning method. Choices: max, chi2, ks (default: max)")
-    parser.add_argument('--prune-histosys-threshold', type=float, default=10.,
-        help="Threshold on HistoSys pruning method determing if shape is significant (default: 10.)")
+    parser.add_argument('--prune-histosys-threshold', type=float, default=0.1,
+        help="Threshold on HistoSys pruning method determing if shape is significant (default: 0.1)")
 
     parser.add_argument('--prune-overallsys', action='store_true', default=False,
         help="Enable OverallSys pruning")
