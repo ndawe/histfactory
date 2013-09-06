@@ -4,7 +4,8 @@ import rootpy; rootpy.log.basic_config_colorized()
 from rootpy.io import root_open
 from rootpy.plotting import Hist
 from rootpy.utils.silence import silence_sout
-import logging; log = logging.getLogger('histfactory')
+import os
+import logging; log = logging.getLogger(os.path.basename(__file__))
 from math import sqrt
 
 
@@ -58,6 +59,10 @@ def process_measurement(m,
                         histosys.low = apply_kylefix(histosys.low)
         # prune overallsys
         # smooth
+        if smooth_histosys and (not smooth_histosys_channels or c.name in smooth_histosys_channels):
+            for s in c.samples:
+                for histosys in s.histo_sys:
+                    smooth_shape(s.hist, histosys, smooth_histosys_iterations)
         # prune shapes
         # fixes that should always be applied
         for s in c.samples:
@@ -167,16 +172,19 @@ def shape_is_significant(total, high, low, thresh=0.1):
     return False
 
 
-def smooth_shape(nominal, high, low, iterations=1):
+def smooth_shape(nominal, histosys, iterations=1):
     """
     Smooth shape systematics with respect to the nominal histogram by applying
     TH1::Smooth() on the ratio of systematic / nominal.
     """
-    ratio_high = high / nominal
-    ratio_low = low / nominal
+    llog = log['smooth_shape']
+    llog.info("smoothing HistoSys {0}".format(histosys.name))
+    ratio_high = histosys.high / nominal
+    ratio_low = histosys.low / nominal
     ratio_high.Smooth(iterations)
     ratio_low.Smooth(iterations)
-    return ratio_high * nominal, ratio_low * nominal
+    histosys.high = ratio_high * nominal
+    histosys.low = ratio_low * nominal
 
 
 def apply_kylefix(hist):
