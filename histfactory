@@ -20,12 +20,14 @@ def process_measurement(m,
                         smooth_histosys_iterations=1,
                         smooth_histosys_channels=None,
                         prune_histosys=False,
-                        prune_overallsys=False):
+                        prune_overallsys=False,
+                        prune_overallsys_threshold=0.5):
 
     for c in m.channels:
         log.info(
             "processing measurement `{0}` channel `{1}` ...".format(
                 m.name, c.name))
+        # rebin
         if rebin != 1 and (not rebin_channels or c.name in rebin_channels):
             for s in c.samples:
                 log.info("applying rebinning {0:d} on sample `{1}`".format(rebin, s.name))
@@ -33,6 +35,7 @@ def process_measurement(m,
                 for histosys in s.histo_sys:
                     histosys.high = apply_rebin(histosys.high, rebin)
                     histosys.low = apply_rebin(histosys.low, rebin)
+        # merge bins
         if merge_bins and (not merge_bins_channels or c.name in merge_bins_channels):
             for s in c.samples:
                 log.info("merging bins {0} in sample `{1}`".format(
@@ -42,6 +45,7 @@ def process_measurement(m,
                 for histosys in s.histo_sys:
                     histosys.high = apply_merge_bins(histosys.high, merge_bins)
                     histosys.low = apply_merge_bins(histosys.low, merge_bins)
+        # apply kylefix
         if kylefix and (not kylefix_channels or c.name in kylefix_channels):
             for s in c.samples:
                 if kylefix_samples and s.name not in kylefix_samples:
@@ -52,6 +56,7 @@ def process_measurement(m,
                     for histosys in s.histo_sys:
                         histosys.high = apply_kylefix(histosys.high)
                         histosys.low = apply_kylefix(histosys.low)
+        # prune overallsys
         # smooth
         # prune shapes
         # fixes that should always be applied
@@ -69,7 +74,10 @@ def uniform_binning(hist):
     histogram with constant width bins along all axes by using the bin indices
     of the input histogram as the x-axis of the new histogram.
     """
+    if hist.uniform():
+        return hist
     llog = log['uniform_binning']
+    llog.info("converting histogram {0} to uniform binning".format(hist.name))
     if hist.GetDimension() == 1:
         new_hist = Hist(
             hist.GetNbinsX(), 0, hist.GetNbinsX(),
@@ -107,8 +115,9 @@ def zero_negs(hist):
     for bin in new_hist.bins():
         if bin.value < 0:
             applied = True
-            llog.warning("zeroing negative bin %d in %s" %
-                         (bin.idx, hist.name))
+            llog.warning(
+                "zeroing negative bin {0:d} in {1}".format(
+                    bin.idx, hist.name))
             bin.value = 0.
     if applied:
         return new_hist
@@ -294,5 +303,6 @@ if __name__ == '__main__':
             smooth_histosys_iterations=args.smooth_histosys_iterations,
             smooth_histosys_channels=args.smooth_histosys_channels,
             prune_histosys=args.prune_histosys,
-            prune_overallsys=args.prune_overallsys)
+            prune_overallsys=args.prune_overallsys,
+            prune_overallsys_threshold=args.prune_overallsys_threshold)
         write_measurement(m, output_suffix=args.output_suffix)
