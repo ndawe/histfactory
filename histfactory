@@ -316,12 +316,12 @@ def write_measurement(m, output_suffix=None):
     root_output = 'ws_{0}.root'.format(output_name)
     xml_output = 'xml_{0}'.format(output_name)
     with root_open(root_output, 'recreate') as out:
-        log.info("writing {0} ...".format(root_output))
+        log.info("writing histograms and measurement in {0} ...".format(root_output))
         with silence_sout():
             m.writeToFile(out)
         # get modified measurement
         out_m = out[m.name]
-        log.info("writing xml in {0} ...".format(xml_output))
+        log.info("writing XML in {0} ...".format(xml_output))
         with silence_sout():
             out_m.PrintXML(xml_output)
 
