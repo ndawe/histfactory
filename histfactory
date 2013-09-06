@@ -148,7 +148,7 @@ def chi2_test(nom, up, down, threshold):
     chi2up = ROOT.TMath.Prob(chi2up, nbin)
     chi2dn = ROOT.TMath.Prob(chi2dn, nbin)
     # return True if the shape should be kept
-    return min(chi2up, chi2dn) > threshold
+    return min(chi2up, chi2dn) <= threshold
 
 
 def shape_is_significant(total, high, low, thresh=0.1):
