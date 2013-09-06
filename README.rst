@@ -2,7 +2,9 @@
 histfactory
 ===========
 
-A script for common operations on HistFactory workspaces. This script can:
+A script for common operations on HistFactory workspaces.
+
+This script can:
 
 * apply the so-called "Kyle-fix" for low-stats background samples
 * rebin histograms
@@ -11,6 +13,9 @@ A script for common operations on HistFactory workspaces. This script can:
 * prune normalization (OverallSys) systematics
 * prune shape (HistoSys) systematics by three separate methods (maximum
   deviation relative to total background statistical uncertainty, Chi2, and KS)
+
+A new ROOT file and new set of XML files will be written out alongside the
+input files with one or more of the above modifications.
 
 Installation
 ------------
