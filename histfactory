@@ -369,7 +369,7 @@ if __name__ == '__main__':
     parser.add_argument('--prune-histosys-method', choices=('max', 'chi2', 'ks'), default='max',
         help="HistoSys pruning method. Choices: max, chi2, ks (default: max)")
     parser.add_argument('--prune-histosys-threshold', type=float, default=0.1,
-        help="Threshold on HistoSys pruning method determing if shape is significant (default: 0.1)")
+        help="Threshold on HistoSys pruning method to determine if shape is significant (default: 0.1)")
 
     parser.add_argument('--prune-overallsys', action='store_true', default=False,
         help="Enable OverallSys pruning")
