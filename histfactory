@@ -35,6 +35,7 @@ def process_measurement(m,
                 m.name, c.name))
         # rebin
         if rebin != 1 and (not rebin_channels or c.name in rebin_channels):
+            c.data.hist = apply_rebin(c.data.hist, rebin)
             for s in c.samples:
                 log.info("applying rebinning {0:d} on sample `{1}`".format(rebin, s.name))
                 s.hist = apply_rebin(s.hist, rebin)
@@ -44,6 +45,7 @@ def process_measurement(m,
 
         # merge bins
         if merge_bins and (not merge_bins_channels or c.name in merge_bins_channels):
+            c.data.hist = apply_merge_bins(c.data.hist, merge_bins)
             for s in c.samples:
                 log.info("merging bins {0} in sample `{1}`".format(
                     ', '.join([':'.join(map(str, r)) for r in merge_bins]),
