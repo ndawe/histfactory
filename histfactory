@@ -399,6 +399,7 @@ def write_measurement(m, output_suffix=None):
         log.info("writing XML in {0} ...".format(xml_output))
         with silence_sout():
             out_m.PrintXML(xml_output)
+    patch_xml(xml_output, root_file=root_output)
 
 
 if __name__ == '__main__':
