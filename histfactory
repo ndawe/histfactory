@@ -415,7 +415,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description="Apply common operations on an existing HistFactory workspace")
     
-    parser.add_argument('--verbose', action='store_true', default=False)
+    parser.add_argument('--verbose', action='store_true', default=False,
+        help="Show all HistFactory/RooStats output")
 
     parser.add_argument('--fill-empties', action='store_true', default=False,
         help="Fill empty background bins per sample with the average weight and set "
