@@ -310,6 +310,8 @@ def is_signal(sample):
 
 
 def write_measurement(m, output_suffix=None):
+    with silence_sout():
+        from rootpy.stats.histfactory import make_model
     output_name = m.name
     if output_suffix is not None:
         output_name += '_{0}'.format(output_suffix)
@@ -321,6 +323,15 @@ def write_measurement(m, output_suffix=None):
             m.writeToFile(out)
         # get modified measurement
         out_m = out[m.name]
+        with silence_sout():
+            out_m.PrintXML(xml_output)
+        log.info("writing combined model in {0} ...".format(root_output))
+        workspace = make_model(m, silence=True)
+        workspace.Write()
+        for channel in m.channels:
+            log.info("writing model for channel `{0}` in {1} ...".format(channel.name, root_output))
+            workspace = make_model(m, channel=channel, silence=True)
+            workspace.Write()
         log.info("writing XML in {0} ...".format(xml_output))
         with silence_sout():
             out_m.PrintXML(xml_output)
