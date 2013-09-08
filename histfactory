@@ -14,6 +14,7 @@ import rootpy; rootpy.log.basic_config_colorized()
 from rootpy.io import root_open
 from rootpy.plotting import Hist
 from rootpy.utils.silence import silence_sout
+from rootpy.context import do_nothing
 
 import logging; log = logging.getLogger(os.path.basename(__file__))
 
@@ -334,8 +335,9 @@ def patch_xml(xml_directory, root_file=None, precision=3):
     """
     Apply patches to HistFactory XML output from PrintXML
     """
+    xml_directory = os.path.normpath(xml_directory)
     xmlfiles = glob('{0}/*.xml'.format(xml_directory))
-    resultsdir = '{0}_results'.format(os.path.normpath(xml_directory))
+    resultsdir = os.path.basename(xml_directory)
 
     for xmlfilename in xmlfiles:
         patched_xmlfilename = '{0}.tmp'.format(xmlfilename)
@@ -348,9 +350,9 @@ def patch_xml(xml_directory, root_file=None, precision=3):
             line = line.replace(
                 '<StatError Activate="True"  InputFile=""  HistoName=""  HistoPath=""  />',
                 '<StatError Activate="True" />')
-            line = line.replace('<Combination OutputFilePrefix="" >',
-                                '<Combination OutputFilePrefix="{0}/hist2workspace" >'.format(
-                                    resultsdir))
+            line = re.sub(
+                '<Combination OutputFilePrefix="(\S*)" >',
+                '<Combination OutputFilePrefix="hist2workspace" >', line)
             line = re.sub('\w+=""', '', line)
             line = re.sub('\s+/>', ' />', line)
             line = re.sub('(\S)\s+</', r'\1</', line)
@@ -376,8 +378,9 @@ def patch_xml(xml_directory, root_file=None, precision=3):
             shutil.copy(schema, xml_directory)
 
 
-def write_measurement(m, output_suffix=None):
-    with silence_sout():
+def write_measurement(m, output_suffix=None, silence=False):
+    context = silence_sout if silence else do_nothing
+    with context():
         from rootpy.stats.histfactory import make_model
     output_name = m.name
     if output_suffix is not None:
@@ -386,11 +389,11 @@ def write_measurement(m, output_suffix=None):
     xml_output = 'xml_{0}'.format(output_name)
     with root_open(root_output, 'recreate') as out:
         log.info("writing histograms and measurement in {0} ...".format(root_output))
-        with silence_sout():
+        with context():
             m.writeToFile(out)
         # get modified measurement
         out_m = out[m.name]
-        with silence_sout():
+        with context():
             out_m.PrintXML(xml_output)
         log.info("writing combined model in {0} ...".format(root_output))
         workspace = make_model(m, silence=True)
@@ -400,7 +403,7 @@ def write_measurement(m, output_suffix=None):
             workspace = make_model(m, channel=channel, silence=True)
             workspace.Write()
         log.info("writing XML in {0} ...".format(xml_output))
-        with silence_sout():
+        with context():
             out_m.PrintXML(xml_output)
     patch_xml(xml_output, root_file=root_output)
 
@@ -411,6 +414,8 @@ if __name__ == '__main__':
     
     parser = argparse.ArgumentParser(
         description="Apply common operations on an existing HistFactory workspace")
+    
+    parser.add_argument('--verbose', action='store_true', default=False)
 
     parser.add_argument('--fill-empties', action='store_true', default=False,
         help="Fill empty background bins per sample with the average weight and set "
@@ -472,8 +477,10 @@ if __name__ == '__main__':
         args.merge_bins = [
             map(int, token.split(':')) for token in args.merge_bins]
     
+    context = do_nothing if args.verbose else silence_sout
+
     log.info("loading RooStats ...")
-    with silence_sout():
+    with context():
         from rootpy.stats.histfactory import measurements_from_xml
     
     log.info("reading XML ...")
@@ -483,7 +490,7 @@ if __name__ == '__main__':
     # patch input XML
     patch_xml(xml_directory)
     with working_directory(parent):
-        meas = measurements_from_xml(args.xmlfile, collect_histograms=True, silence=True)
+        meas = measurements_from_xml(args.xmlfile, collect_histograms=True, silence=not args.verbose)
 
     for m in meas:
         process_measurement(m,
@@ -504,5 +511,5 @@ if __name__ == '__main__':
             prune_overallsys=args.prune_overallsys,
             prune_overallsys_channels=args.prune_overallsys_channels,
             prune_overallsys_threshold=args.prune_overallsys_threshold)
-        write_measurement(m, output_suffix=args.output_suffix)
+        write_measurement(m, output_suffix=args.output_suffix, silence=not args.verbose)
     log.info("done")
