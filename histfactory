@@ -12,9 +12,9 @@ import logging; log = logging.getLogger(os.path.basename(__file__))
 
 
 def process_measurement(m,
-                        kylefix=False,
-                        kylefix_samples=None,
-                        kylefix_channels=None,
+                        fill_empties=False,
+                        fill_empties_samples=None,
+                        fill_empties_channels=None,
                         rebin=1,
                         rebin_channels=None,
                         merge_bins=None,
@@ -56,17 +56,17 @@ def process_measurement(m,
                     histosys.high = apply_merge_bins(histosys.high, merge_bins)
                     histosys.low = apply_merge_bins(histosys.low, merge_bins)
 
-        # apply kylefix
-        if kylefix and (not kylefix_channels or c.name in kylefix_channels):
+        # apply fill_empties
+        if fill_empties and (not fill_empties_channels or c.name in fill_empties_channels):
             for s in c.samples:
-                if kylefix_samples and s.name not in kylefix_samples:
+                if fill_empties_samples and s.name not in fill_empties_samples:
                     continue
                 if not is_signal(s):
-                    log.info("applying kylefix on sample `{0}`".format(s.name))
-                    s.hist = apply_kylefix(s.hist)
+                    log.info("applying fill_empties on sample `{0}`".format(s.name))
+                    s.hist = apply_fill_empties(s.hist)
                     for histosys in s.histo_sys:
-                        histosys.high = apply_kylefix(histosys.high)
-                        histosys.low = apply_kylefix(histosys.low)
+                        histosys.high = apply_fill_empties(histosys.high)
+                        histosys.low = apply_fill_empties(histosys.low)
 
         # smooth
         if smooth_histosys and (not smooth_histosys_channels or c.name in smooth_histosys_channels):
@@ -272,13 +272,13 @@ def apply_rebin(hist, n):
     return new_hist
 
 
-def apply_kylefix(hist):
+def apply_fill_empties(hist):
     """
     Return a clone of the input histogram where the empty bins have been filled
     with the average weight and the errors of these bins set to sqrt(<w^2>).
     If no bins were altered, then return the original histogram
     """
-    fixed_hist = hist.Clone(name=hist.name + '_kylefix', shallow=True)
+    fixed_hist = hist.Clone(name=hist.name + '_fill_empties', shallow=True)
 
     sumW2TotBin = sum([bin.error**2 for bin in hist.bins()])
     avWeightBin = hist.GetSumOfWeights() / hist.GetEntries()
@@ -289,7 +289,7 @@ def apply_kylefix(hist):
     for bin in fixed_hist.bins():
         if bin.value < 1E-6:
             log.warning(
-                "kylefix is filling empty or negative bin {0:d} in `{1}`".format(
+                "fill_empties is filling empty or negative bin {0:d} in `{1}`".format(
                     bin.idx, hist.name))
             # binContent = avWeight [or avWeightbin]
             bin.value = avWeightBin
@@ -344,12 +344,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description="Apply common operations on an existing HistFactory workspace")
 
-    parser.add_argument('--kylefix', action='store_true', default=False,
-        help="Enable application of the KyleFix on background samples")
-    parser.add_argument('--kylefix-samples', nargs='*',
-        help="Restrict application of KyleFix to these samples (default: all samples)")
-    parser.add_argument('--kylefix-channels', nargs='*',
-        help="Restrict application of KyleFix to these channels (default: all channels)")
+    parser.add_argument('--fill-empties', action='store_true', default=False,
+        help="Fill empty background bins per sample with the average weight and set "
+             "the errors of these bins to sqrt(<w^2>)")
+    parser.add_argument('--fill-empties-samples', nargs='*',
+        help="Restrict application of --fill-empties to these samples (default: all samples)")
+    parser.add_argument('--fill-empties-channels', nargs='*',
+        help="Restrict application of --fill-empties to these channels (default: all channels)")
 
     parser.add_argument('--rebin', type=int, default=1,
         help="Rebin histograms by grouping each N bins. "
@@ -411,9 +412,9 @@ if __name__ == '__main__':
 
     for m in meas:
         process_measurement(m,
-            kylefix=args.kylefix,
-            kylefix_samples=args.kylefix_samples,
-            kylefix_channels=args.kylefix_channels,
+            fill_empties=args.fill_empties,
+            fill_empties_samples=args.fill_empties_samples,
+            fill_empties_channels=args.fill_empties_channels,
             rebin=args.rebin,
             rebin_channels=args.rebin_channels,
             merge_bins=args.merge_bins,
