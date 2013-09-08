@@ -429,3 +429,4 @@ if __name__ == '__main__':
             prune_overallsys_channels=args.prune_overallsys_channels,
             prune_overallsys_threshold=args.prune_overallsys_threshold)
         write_measurement(m, output_suffix=args.output_suffix)
+    log.info("done")
