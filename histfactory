@@ -292,16 +292,13 @@ def apply_fill_empties(hist):
     avWeightBin = hist.GetSumOfWeights() / hist.GetEntries()
     avW2Bin = sumW2TotBin / hist.GetEntries()
 
-    # now fill empty bins
     applied = False
     for bin in fixed_hist.bins():
         if bin.value < 1E-6:
             log.warning(
-                "fill_empties is filling empty or negative bin {0:d} in `{1}`".format(
+                "filling empty or negative bin {0:d} in `{1}` with average weight".format(
                     bin.idx, hist.name))
-            # binContent = avWeight [or avWeightbin]
             bin.value = avWeightBin
-            # binError = sqrt(avW2) [or sqrt(avW2Bin)]
             bin.error = sqrt(avW2Bin)
             applied = True
     
@@ -331,7 +328,7 @@ def working_directory(path):
         os.chdir(prev_cwd)
 
 
-def patch_xml(xml_directory, root_file=None, precision=3):
+def patch_xml(xml_directory, root_file=None, float_precision=3):
     """
     Apply patches to HistFactory XML output from PrintXML
     """
@@ -364,7 +361,7 @@ def patch_xml(xml_directory, root_file=None, precision=3):
             line = line.replace('<ParamSetting Const="True"></ParamSetting>', '')
             # chop off floats to desired precision
             line = re.sub(r'\d*\.\d{4,}',
-                          lambda x: str(round(float(x.group()), precision)), line)
+                          lambda x: str(round(float(x.group()), float_precision)), line)
             line = re.sub('"\s\s+(\S)', r'" \1', line)
             fout.write(line)
         fin.close()
