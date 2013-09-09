@@ -102,7 +102,7 @@ def process_measurement(m,
 
                 elif prune_histosys_method == 'chi2':
                     for histosys in s.histo_sys:
-                        if not chi2_test(s.hist, histosys.high, histosys.low, prune_histosys_threshold):
+                        if not shape_chi2_test(s.hist, histosys.high, histosys.low, prune_histosys_threshold):
                             names.append(histosys.name)
 
                 elif prune_histosys_method == 'ks':
@@ -136,7 +136,7 @@ def process_measurement(m,
                 histosys.low = uniform_binning(zero_negs(histosys.low))
 
 
-def chi2_test(nom, up, down, threshold):
+def shape_chi2_test(nom, up, down, threshold):
     """
     Calculate the Chi^2 of the up and down variations and return True the
     variations are significant given a threshold on the minimum Chi^2 value.
@@ -164,13 +164,13 @@ def chi2_test(nom, up, down, threshold):
     return min(chi2up, chi2dn) <= threshold
 
 
-def shape_is_significant(total, high, low, thresh=0.1):
+def shape_is_significant(total, high, low, threshold=0.1):
     """
-    For a given shape systematic for background-X, calculate
-    s_i=|up_i-down_i|/stat_totBckg_i, where up_i is up variation in bin-i,
-    down_i is down variation in bin-I, stat_totBckg_i is statistical
-    uncertainty for total background prediction in bin-i. If max(s_i)<0.1,
-    then drop this shape systematic for background-X
+    For a given shape systematic calculate ``s_i=|up_i-down_i|/stat_total_i``,
+    where ``up_i`` is up variation in ``bin_i``, ``down_i`` is down variation
+    in ``bin_i``, ``stat_total_i`` is the statistical uncertainty for total
+    background prediction in ``bin_i``. If ``max(s_i)<0.1``, then drop this
+    shape systematic.
     """
     for bin_total, bin_high, bin_low in zip(
             total.bins(), high.bins(), low.bins()):
@@ -180,7 +180,7 @@ def shape_is_significant(total, high, low, thresh=0.1):
                 return True
             continue
         sig = abs(bin_high.value - bin_low.value) / bin_total.error
-        if sig > thresh:
+        if sig > threshold:
             return True
     return False
 
@@ -310,9 +310,9 @@ def apply_fill_empties(hist):
     return hist
 
 
-def is_signal(sample):
+def is_signal(sample, poi='SigXsecOverSM'):
     for norm in sample.GetNormFactorList():
-        if norm.name == 'SigXsecOverSM':
+        if norm.name == poi:
             return True
     return False
 
@@ -376,6 +376,10 @@ def patch_xml(xml_directory, root_file=None, precision=3):
         schema = '{0}/etc/HistFactorySchema.dtd'.format(rootsys)
         if os.path.isfile(schema):
             shutil.copy(schema, xml_directory)
+        else:
+            log.warning("$ROOTSYS={0}, but {1} does not exist".format(rootsys, schema))
+    else:
+        log.warning("$ROOTSYS not set, so HistFactorySchema.dtd cannot be found")
 
 
 def write_measurement(m, output_suffix=None, silence=False):
