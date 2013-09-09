@@ -413,8 +413,26 @@ if __name__ == '__main__':
     from rootpy.extern import argparse
     
     parser = argparse.ArgumentParser(
-        description="Apply common operations on an existing HistFactory workspace")
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        add_help=False,
+        description="""
+A script for common operations on HistFactory workspaces.
+
+This script can:
+
+* fill empty background bins with the average sample weights
+* rebin histograms
+* merge specific bins in histograms
+* smooth shape (HistoSys) systematics
+* prune normalization (OverallSys) systematics
+* prune shape (HistoSys) systematics by three separate methods: maximum
+  deviation relative to total background statistical uncertainty, Chi2, and KS
+
+A new ROOT file and new set of XML files will be written out alongside the 
+input files with one or more of the above modifications.""")
     
+    parser.add_argument('-h', '--help', action='help',
+        help="Show this help message and exit")
     parser.add_argument('--verbose', action='store_true', default=False,
         help="Show all HistFactory/RooStats output")
 
