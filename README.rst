@@ -6,6 +6,8 @@ A script for common operations on HistFactory workspaces.
 
 This script can:
 
+* list the differences between two workspaces (including differences at the
+  histogram level)
 * fill empty background bins with the average sample weights
 * rebin histograms
 * merge specific bins in histograms
