@@ -55,7 +55,7 @@ Run the script on the top-level HistFactory XML file and from a directory where
 the ROOT file containing the histograms is the same relative path as written in
 the XML::
 
-    ./histfactory path_to_my_xml/measurement.xml
+    ./histfactory ws path_to_my_xml/measurement.xml
 
 See ``--help`` for more information::
 
