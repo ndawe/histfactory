@@ -409,6 +409,112 @@ def write_measurement(m, output_suffix=None, silence=False):
     patch_xml(xml_output, root_file=root_output)
 
 
+def equal(left, right, precision=1E-7):
+    return abs(left - right) < precision
+
+
+def diff_histrograms(left, right, compare_edges=False, precision=1E-7):
+
+    # compare dimensionality
+    if left.GetDimension() != right.GetDimension():
+        log.warning(
+            "histgrams {0} and {1} differ in dimensionality: {2:d} and {3:d}".format(
+                left.name, right.name,
+                left.GetDimension(), right.GetDimension()))
+        return True
+    # compare axis
+    axis_names = 'xyz'
+    for axis in xrange(left.GetDimension()):
+        if left.nbins(axis) != right.nbins(axis):
+            log.warning(
+                "histograms {0} and {1} differ in the number of bins "
+                "along the {2}-axis: {3:d} {4:d}".format(
+                    left.name, right.name, axis_names[axis],
+                    left.nbins(axis),
+                    right.nbins(axis)))
+            return True
+    differ = False
+    # compare contents and errors
+    for left_bin, right_bin in izip(left.bins(), right.bins()):
+        if not equal(left_bin.value, right_bin.value, precision=precision):
+            log.warning(
+                "histgrams {0} and {1} differ in content in bin {2:d}: {3:f} {4:f}".format(
+                    left.name, right.name, left_bin.idx,
+                    left_bin.value, right_bin.value))
+            differ = True
+        if not equal(left_bin.error, right_bin.error, precision=precision):
+            log.warning(
+                "histgrams {0} and {1} differ in error in bin {2:d}: {3:f} {4:f}".format(
+                    left.name, right.name, left_bin.idx,
+                    left_bin.error, right_bin.error))
+            differ = True
+    return differ
+
+
+def diff_samples(left, right, precision=1E-7):
+    
+    # compare nominal
+    differ = diff_histrograms(left.hist, right.hist, precision=precision)
+    # compare OverallSys
+    # compare HistoSys
+    return differ
+
+
+def diff_channels(left, right, precision=1E-7):
+
+    left_samples = sorted(left.samples, key=lambda s: s.name)
+    right_samples = sorted(right.samples, key=lambda s: s.name)
+    
+    differ = False
+    while left_samples and right_samples:
+        if left_samples[0].name == right_samples[0].name:
+            left_s, right_s = left_samples.pop(0), right_samples.pop(0)
+            _differ = diff_samples(left_s, right_s, precision=precision)
+            if _differ:
+                log.warning(
+                    "samples {0} differ in channel {1}".format(
+                        left_s.name, left.name))
+                differ = _differ
+        elif len(right_samples) > len(left_samples):
+            log.warning("> {0}".format(right_samples.pop(0)))
+            differ = True
+        elif len(right_samples) < len(left_samples):
+            log.warning("< {0}".format(left_samples.pop(0)))
+            differ = True
+        else:
+            log.warning("< {0}".format(left_samples.pop(0)))
+            log.warning("> {0}".format(right_samples.pop(0)))
+            differ = True
+    return differ
+
+
+def diff_measurements(left, right, precision=1E-7):
+
+    left_channels = sorted(left.channels, key=lambda c: c.name)
+    right_channels = sorted(right.channels, key=lambda c: c.name)
+    
+    differ = False
+    while left_channels and right_channels:
+        if left_channels[0].name == right_channels[0].name:
+            left_c, right_c = left_channels.pop(0), right_channels.pop(0)
+            _differ = diff_channels(left_c, right_c, precision=precision)
+            if _differ:
+                log.warning(
+                    "channels {0} differ".format(left_c.name))
+                differ = _differ
+        elif len(right_channels) > len(left_channels):
+            log.warning("> {0}".format(right_channels.pop(0)))
+            differ = True
+        elif len(right_channels) < len(left_channels):
+            log.warning("< {0}".format(left_channels.pop(0)))
+            differ = True
+        else:
+            log.warning("< {0}".format(left_channels.pop(0)))
+            log.warning("> {0}".format(right_channels.pop(0)))
+            differ = True
+    return differ
+
+
 if __name__ == '__main__':
     
     from rootpy.extern import argparse
@@ -421,6 +527,7 @@ A script for common operations on HistFactory workspaces.
 
 This script can:
 
+* list the differences between two workspaces (including differences at the histogram level)
 * fill empty background bins with the average sample weights
 * rebin histograms
 * merge specific bins in histograms
@@ -437,99 +544,138 @@ input files with one or more of the above modifications.""")
     parser.add_argument('--verbose', action='store_true', default=False,
         help="Show all HistFactory/RooStats output")
 
-    parser.add_argument('--fill-empties', action='store_true', default=False,
+    subparsers = parser.add_subparsers()
+
+    parser_diff = subparsers.add_parser('diff',
+        description="List the differences between two workspaces",
+        add_help=False)
+    
+    parser_diff.add_argument('-h', '--help', action='help',
+        help="Show this help message and exit")
+
+    parser_diff.add_argument('-p', '--precision', type=float, default=1E-7,
+        help="Precision for comparing if two floats are equal (default: 1E-7)")
+
+    parser_diff.add_argument('left')
+    parser_diff.add_argument('right')
+    parser_diff.set_defaults(op='diff')
+
+    parser_ws = subparsers.add_parser('ws',
+        description="Create a new workspace with optional modifications",
+        add_help=False)
+    
+    parser_ws.add_argument('-h', '--help', action='help',
+        help="Show this help message and exit")
+    
+    parser_ws.add_argument('--fill-empties', action='store_true', default=False,
         help="Fill empty background bins per sample with the average weight and set "
              "the errors of these bins to sqrt(<w^2>)")
-    parser.add_argument('--fill-empties-samples', nargs='*',
+    parser_ws.add_argument('--fill-empties-samples', nargs='*',
         help="Restrict application of --fill-empties to these samples (default: all samples)")
-    parser.add_argument('--fill-empties-channels', nargs='*',
+    parser_ws.add_argument('--fill-empties-channels', nargs='*',
         help="Restrict application of --fill-empties to these channels (default: all channels)")
 
-    parser.add_argument('--rebin', type=int, default=1,
+    parser_ws.add_argument('--rebin', type=int, default=1,
         help="Rebin histograms by grouping each N bins. "
              "Use --rebin 2 to merge every group of 2 bins (default: no rebinning)")
-    parser.add_argument('--rebin-channels', nargs='*',
+    parser_ws.add_argument('--rebin-channels', nargs='*',
         help="Restrict the rebinning to these channels (default: all channels)")
 
-    parser.add_argument('--merge-bins', nargs='*',
+    parser_ws.add_argument('--merge-bins', nargs='*',
         help="Merge bins by ranges of bin indices. "
              "For example, use 1:-12 to merge left bins such that 10 bins on the right "
              "are untouched. Use 1:5 6:10 to merge bins 1 to 5 into one bin and 6 to 10 into one bin. "
              "Note that overflow bin indices are included in the indexing and "
              "that bin index ranges are inclusive of the low and high indices. (default: do not merge bins)")
-    parser.add_argument('--merge-bins-channels', nargs='*',
+    parser_ws.add_argument('--merge-bins-channels', nargs='*',
         help="Restrict bin merging to these channels (default: all channels)")
 
-    parser.add_argument('--smooth-histosys', action='store_true', default=False,
+    parser_ws.add_argument('--smooth-histosys', action='store_true', default=False,
         help="Smooth HistoSys histograms (default: False)")
-    parser.add_argument('--smooth-histosys-iterations', type=int, default=1,
+    parser_ws.add_argument('--smooth-histosys-iterations', type=int, default=1,
         help="Number of smoothing iterations in TH1::Smooth(N) to use when "
              "smoothing HistoSys (default: 1)")
-    parser.add_argument('--smooth-histosys-channels', nargs='*',
+    parser_ws.add_argument('--smooth-histosys-channels', nargs='*',
         help="Restrict HistoSys smoothing to these channels (default: all channels)")
 
-    parser.add_argument('--prune-histosys', action='store_true', default=False,
+    parser_ws.add_argument('--prune-histosys', action='store_true', default=False,
         help="Enable HistoSys pruning")
-    parser.add_argument('--prune-histosys-channels', nargs='*',
+    parser_ws.add_argument('--prune-histosys-channels', nargs='*',
         help="Restrict HistoSys smoothing to these channels (default: all channels)")
-    parser.add_argument('--prune-histosys-method', choices=('max', 'chi2', 'ks'), default='max',
+    parser_ws.add_argument('--prune-histosys-method', choices=('max', 'chi2', 'ks'), default='max',
         help="HistoSys pruning method. Choices: max, chi2, ks (default: max)")
-    parser.add_argument('--prune-histosys-threshold', type=float, default=0.1,
+    parser_ws.add_argument('--prune-histosys-threshold', type=float, default=0.1,
         help="Threshold on HistoSys pruning method to determine if shape is significant (default: 0.1)")
 
-    parser.add_argument('--prune-overallsys', action='store_true', default=False,
+    parser_ws.add_argument('--prune-overallsys', action='store_true', default=False,
         help="Enable OverallSys pruning")
-    parser.add_argument('--prune-overallsys-channels', nargs='*',
+    parser_ws.add_argument('--prune-overallsys-channels', nargs='*',
         help="Restrict OverallSys smoothing to these channels (default: all channels)")
-    parser.add_argument('--prune-overallsys-threshold', type=float, default=0.5,
+    parser_ws.add_argument('--prune-overallsys-threshold', type=float, default=0.5,
         help="Threshold [%%] below which OverallSys components are dropped (default: 0.5)")
 
-    parser.add_argument('--output-suffix', default=None,
+    parser_ws.add_argument('--output-suffix', default=None,
         help="The output ROOT file and directory containing the XML "
              "will have the same names as the measurement names. You "
              "may optionally add a suffix to these names with this option.")
 
-    parser.add_argument('xmlfile')
+    parser_ws.add_argument('xmlfile')
+    parser_ws.set_defaults(op='ws')
     args = parser.parse_args()
-    args.xmlfile = os.path.abspath(os.path.normpath(args.xmlfile))
-    
-    if args.merge_bins:
-        args.merge_bins = [
-            map(int, token.split(':')) for token in args.merge_bins]
-    
+        
     context = do_nothing if args.verbose else silence_sout
 
     log.info("loading RooStats ...")
     with context():
         from rootpy.stats.histfactory import measurements_from_xml
-    
-    log.info("reading XML ...")
-    # cd to parent directory of the XML where the ROOT file containing the histograms should sit
-    xml_directory = os.path.dirname(args.xmlfile)
-    parent = os.path.abspath(os.path.join(xml_directory, os.pardir))
-    # patch input XML
-    patch_xml(xml_directory)
-    with working_directory(parent):
-        meas = measurements_from_xml(args.xmlfile, collect_histograms=True, silence=not args.verbose)
 
-    for m in meas:
-        process_measurement(m,
-            fill_empties=args.fill_empties,
-            fill_empties_samples=args.fill_empties_samples,
-            fill_empties_channels=args.fill_empties_channels,
-            rebin=args.rebin,
-            rebin_channels=args.rebin_channels,
-            merge_bins=args.merge_bins,
-            merge_bins_channels=args.merge_bins_channels,
-            smooth_histosys=args.smooth_histosys,
-            smooth_histosys_iterations=args.smooth_histosys_iterations,
-            smooth_histosys_channels=args.smooth_histosys_channels,
-            prune_histosys=args.prune_histosys,
-            prune_histosys_channels=args.prune_histosys_channels,
-            prune_histosys_method=args.prune_histosys_method,
-            prune_histosys_threshold=args.prune_histosys_threshold,
-            prune_overallsys=args.prune_overallsys,
-            prune_overallsys_channels=args.prune_overallsys_channels,
-            prune_overallsys_threshold=args.prune_overallsys_threshold)
-        write_measurement(m, output_suffix=args.output_suffix, silence=not args.verbose)
-    log.info("done")
+    def read(xml):
+        xml = os.path.abspath(os.path.normpath(xml))
+        log.info("parsing XML in {0} ...".format(xml))
+        # cd to parent directory of the XML where the ROOT file containing the histograms should sit
+        xml_directory = os.path.dirname(xml)
+        parent = os.path.abspath(os.path.join(xml_directory, os.pardir))
+        # patch input XML
+        patch_xml(xml_directory)
+        with working_directory(parent):
+            meas = measurements_from_xml(xml, collect_histograms=True, silence=not args.verbose)
+        return meas
+
+    if args.op == 'diff':
+
+        left_measurement = read(args.left)[0]
+        right_measurement = read(args.right)[0]
+        if diff_measurements(left_measurement,
+                             right_measurement,
+                             precision=args.precision):
+            log.warning("measurements differ")
+
+    elif args.op == 'ws':
+        
+        if args.merge_bins:
+            args.merge_bins = [
+                map(int, token.split(':')) for token in args.merge_bins]
+                
+        meas = read(args.xmlfile)
+
+        for m in meas:
+            process_measurement(m,
+                fill_empties=args.fill_empties,
+                fill_empties_samples=args.fill_empties_samples,
+                fill_empties_channels=args.fill_empties_channels,
+                rebin=args.rebin,
+                rebin_channels=args.rebin_channels,
+                merge_bins=args.merge_bins,
+                merge_bins_channels=args.merge_bins_channels,
+                smooth_histosys=args.smooth_histosys,
+                smooth_histosys_iterations=args.smooth_histosys_iterations,
+                smooth_histosys_channels=args.smooth_histosys_channels,
+                prune_histosys=args.prune_histosys,
+                prune_histosys_channels=args.prune_histosys_channels,
+                prune_histosys_method=args.prune_histosys_method,
+                prune_histosys_threshold=args.prune_histosys_threshold,
+                prune_overallsys=args.prune_overallsys,
+                prune_overallsys_channels=args.prune_overallsys_channels,
+                prune_overallsys_threshold=args.prune_overallsys_threshold)
+            write_measurement(m, output_suffix=args.output_suffix, silence=not args.verbose)
+        log.info("done")
