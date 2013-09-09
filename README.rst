@@ -6,7 +6,7 @@ A script for common operations on HistFactory workspaces.
 
 This script can:
 
-* apply the so-called "Kyle-fix" for low-stats background samples
+* fill empty background bins with the average sample weights
 * rebin histograms
 * merge specific bins in histograms
 * smooth shape (HistoSys) systematics
