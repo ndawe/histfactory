@@ -60,3 +60,5 @@ the XML::
 See ``--help`` for more information::
 
     ./histfactory --help
+    ./histfactory diff --help
+    ./histfactory ws --help
