@@ -343,6 +343,7 @@ def patch_xml(files, root_file=None, float_precision=3):
     if float_precision < 0:
         raise ValueError("precision must be greater than 0")
     for xmlfilename in files:
+        xmlfilename = os.path.abspath(os.path.normpath(xmlfilename))
         patched_xmlfilename = '{0}.tmp'.format(xmlfilename)
         log.info("patching {0} ...".format(xmlfilename))
         fin = open(xmlfilename, 'r')
@@ -374,6 +375,20 @@ def patch_xml(files, root_file=None, float_precision=3):
         fin.close()
         fout.close()
         shutil.move(patched_xmlfilename, xmlfilename)
+        if not os.path.isfile(os.path.join(
+                              os.path.dirname(xmlfilename),
+                              'HistFactorySchema.dtd')):
+            rootsys = os.getenv('ROOTSYS', None)
+            if rootsys is not None:
+                dtdfile = os.path.join(rootsys, 'etc/HistFactorySchema.dtd')
+                target = os.path.dirname(xmlfilename)
+                if os.path.isfile(dtdfile):
+                    log.info("copying {0} to {1} ...".format(dtdfile, target))
+                    shutil.copy(dtdfile, target)
+                else:
+                    log.warning("{0} does not exist".format(dtdfile))
+            else:
+                log.warning("$ROOTSYS is not set so cannot find HistFactorySchema.dtd")
 
 
 def write_measurement(m, output_suffix=None, silence=False):
