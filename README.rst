@@ -6,6 +6,8 @@ A script for common operations on HistFactory workspaces.
 
 This script can:
 
+* patch HistFactory XML files by cleaning up the formatting and fixing known
+  issues that trigger HistFactory bugs
 * list the differences between two workspaces (including differences at the
   histogram level)
 * fill empty background bins with the average sample weights
@@ -60,5 +62,6 @@ the XML::
 See ``--help`` for more information::
 
     ./histfactory --help
+    ./histfactory patch --help
     ./histfactory diff --help
     ./histfactory ws --help
