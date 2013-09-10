@@ -328,15 +328,13 @@ def working_directory(path):
         os.chdir(prev_cwd)
 
 
-def patch_xml(xml_directory, root_file=None, float_precision=3):
+def patch_xml(files, root_file=None, float_precision=3):
     """
     Apply patches to HistFactory XML output from PrintXML
     """
-    xml_directory = os.path.normpath(xml_directory)
-    xmlfiles = glob('{0}/*.xml'.format(xml_directory))
-    resultsdir = os.path.basename(xml_directory)
-
-    for xmlfilename in xmlfiles:
+    if float_precision < 0:
+        raise ValueError("precision must be greater than 0")
+    for xmlfilename in files:
         patched_xmlfilename = '{0}.tmp'.format(xmlfilename)
         log.info("patching {0} ...".format(xmlfilename))
         fin = open(xmlfilename, 'r')
@@ -360,23 +358,14 @@ def patch_xml(xml_directory, root_file=None, float_precision=3):
             # HistFactory bug:
             line = line.replace('<ParamSetting Const="True"></ParamSetting>', '')
             # chop off floats to desired precision
-            line = re.sub(r'\d*\.\d{4,}',
-                          lambda x: str(round(float(x.group()), float_precision)), line)
+            line = re.sub(r'"(\d*\.\d{{{0:d},}})"'.format(float_precision + 1),
+                          lambda x: '"{0}"'.format(str(round(float(x.group(1)), float_precision))),
+                          line)
             line = re.sub('"\s\s+(\S)', r'" \1', line)
             fout.write(line)
         fin.close()
         fout.close()
         shutil.move(patched_xmlfilename, xmlfilename)
-
-    rootsys = os.getenv('ROOTSYS', None)
-    if rootsys is not None:
-        schema = '{0}/etc/HistFactorySchema.dtd'.format(rootsys)
-        if os.path.isfile(schema):
-            shutil.copy(schema, xml_directory)
-        else:
-            log.warning("$ROOTSYS={0}, but {1} does not exist".format(rootsys, schema))
-    else:
-        log.warning("$ROOTSYS not set, so HistFactorySchema.dtd cannot be found")
 
 
 def write_measurement(m, output_suffix=None, silence=False):
@@ -406,14 +395,64 @@ def write_measurement(m, output_suffix=None, silence=False):
         log.info("writing XML in {0} ...".format(xml_output))
         with context():
             out_m.PrintXML(xml_output)
-    patch_xml(xml_output, root_file=root_output)
+    patch_xml(glob(os.path.join(xml_output, '*.xml')), root_file=root_output)
 
 
 def equal(left, right, precision=1E-7):
     return abs(left - right) < precision
 
 
-def diff_histrograms(left, right, compare_edges=False, precision=1E-7):
+def _get_named(sequence, name):
+    for i, thing in enumerate(sequence):
+        if thing.GetName() == name:
+            return i, thing
+    return None, None
+
+
+def partitioning(left, right):
+    """
+    Partition each collection into three sets containing the elements that
+    overlap between the collections, elements that are only found in the left
+    collection and elements that are only found in the right collection.
+    """
+    overlap = []
+    left_only  = []
+    right_only = right[:]
+    for thing in left:
+        idx, other = _get_named(right_only, thing.name)
+        if idx is not None:
+            overlap.append((thing, other))
+            right_only.pop(idx)
+        else:
+            left_only.append(thing)
+    return overlap, left_only, right_only
+
+
+def _diff_sequence_helper(left, right, diff_func, parent=None, **kwargs):
+    
+    differ = False
+    overlap, left_only, right_only = partitioning(
+        left, right)
+    for left_o, right_o in overlap:
+        _differ = diff_func(left_o, right_o, **kwargs)
+        if _differ:
+            if parent is not None:
+                log.warning(
+                    "{0} differs in {1}".format(
+                        left_o, parent))
+            else:
+                log.warning(
+                    "{0} differs".format(
+                        left_o))
+            differ = _differ
+    for coll, sym in ((left_only, '<'), (right_only, '>')):
+        for thing in coll:
+            log.warning("{0} {1} {2}".format(parent, sym, thing))
+            differ = True
+    return differ
+
+
+def diff_histograms(left, right, compare_edges=False, precision=1E-7):
 
     # compare dimensionality
     if left.GetDimension() != right.GetDimension():
@@ -451,68 +490,57 @@ def diff_histrograms(left, right, compare_edges=False, precision=1E-7):
     return differ
 
 
+def diff_overallsys(left, right, precision=1E-7):
+    
+    differ = False
+    if not equal(left.low, right.low, precision=precision):
+        differ = True
+        log.warning("OverallSys {0} differs for low values: {1:f} {2:f}".format(
+            left.name, left.low, right.low))
+    if not equal(left.high, right.high, precision=precision):
+        differ = True
+        log.warning("OverallSys {0} differs for high values: {1:f} {2:f}".format(
+            left.name, left.high, right.high))
+    return differ
+
+
+def diff_histosys(left, right, precision=1E-7):
+
+    differ = False
+    if diff_histograms(left.low, right.low, precision=precision):
+        differ = True
+    if diff_histograms(left.high, right.high, precision=precision):
+        differ = True
+    return differ
+    
+
 def diff_samples(left, right, precision=1E-7):
     
     # compare nominal
-    differ = diff_histrograms(left.hist, right.hist, precision=precision)
+    differ = diff_histograms(left.hist, right.hist, precision=precision)
     # compare OverallSys
+    _differ = _diff_sequence_helper(left.overall_sys, right.overall_sys,
+        diff_func=diff_overallsys, parent=left, precision=precision)
+    if _differ:
+        differ = differ
     # compare HistoSys
+    _differ = _diff_sequence_helper(left.histo_sys, right.histo_sys,
+        diff_func=diff_histosys, parent=left, precision=precision)
+    if _differ:
+        differ = differ
     return differ
 
 
 def diff_channels(left, right, precision=1E-7):
 
-    left_samples = sorted(left.samples, key=lambda s: s.name)
-    right_samples = sorted(right.samples, key=lambda s: s.name)
-    
-    differ = False
-    while left_samples and right_samples:
-        if left_samples[0].name == right_samples[0].name:
-            left_s, right_s = left_samples.pop(0), right_samples.pop(0)
-            _differ = diff_samples(left_s, right_s, precision=precision)
-            if _differ:
-                log.warning(
-                    "samples {0} differ in channel {1}".format(
-                        left_s.name, left.name))
-                differ = _differ
-        elif len(right_samples) > len(left_samples):
-            log.warning("> {0}".format(right_samples.pop(0)))
-            differ = True
-        elif len(right_samples) < len(left_samples):
-            log.warning("< {0}".format(left_samples.pop(0)))
-            differ = True
-        else:
-            log.warning("< {0}".format(left_samples.pop(0)))
-            log.warning("> {0}".format(right_samples.pop(0)))
-            differ = True
-    return differ
+    return _diff_sequence_helper(left.samples, right.samples,
+        diff_func=diff_samples, parent=left, precision=precision)
 
 
 def diff_measurements(left, right, precision=1E-7):
 
-    left_channels = sorted(left.channels, key=lambda c: c.name)
-    right_channels = sorted(right.channels, key=lambda c: c.name)
-    
-    differ = False
-    while left_channels and right_channels:
-        if left_channels[0].name == right_channels[0].name:
-            left_c, right_c = left_channels.pop(0), right_channels.pop(0)
-            _differ = diff_channels(left_c, right_c, precision=precision)
-            if _differ:
-                log.warning(
-                    "channels {0} differ".format(left_c.name))
-                differ = _differ
-        elif len(right_channels) > len(left_channels):
-            log.warning("> {0}".format(right_channels.pop(0)))
-            differ = True
-        elif len(right_channels) < len(left_channels):
-            log.warning("< {0}".format(left_channels.pop(0)))
-            differ = True
-        else:
-            log.warning("< {0}".format(left_channels.pop(0)))
-            log.warning("> {0}".format(right_channels.pop(0)))
-            differ = True
-    return differ
+    return _diff_sequence_helper(left.channels, right.channels,
+        diff_func=diff_channels, parent=left, precision=precision)
 
 
 if __name__ == '__main__':
@@ -546,6 +574,7 @@ input files with one or more of the above modifications.""")
 
     subparsers = parser.add_subparsers()
 
+    
     parser_diff = subparsers.add_parser('diff',
         description="List the differences between two workspaces",
         add_help=False)
@@ -559,6 +588,23 @@ input files with one or more of the above modifications.""")
     parser_diff.add_argument('left')
     parser_diff.add_argument('right')
     parser_diff.set_defaults(op='diff')
+
+    
+    parser_patch = subparsers.add_parser('patch',
+        description="Patch HistFactory XML files",
+        add_help=False)
+
+    parser_patch.add_argument('-h', '--help', action='help',
+        help="Show this help message and exit")
+    
+    parser_patch.add_argument('-p', '--precision', type=int, default=3,
+        help="Number of decimal places to keep in all floats (default: 3)")
+
+    parser_patch.add_argument('files', nargs='+',
+        help="HistFactory XML files")
+    
+    parser_patch.set_defaults(op='patch')
+
 
     parser_ws = subparsers.add_parser('ws',
         description="Create a new workspace with optional modifications",
@@ -623,32 +669,33 @@ input files with one or more of the above modifications.""")
     parser_ws.set_defaults(op='ws')
     args = parser.parse_args()
         
-    context = do_nothing if args.verbose else silence_sout
-
-    log.info("loading RooStats ...")
-    with context():
-        from rootpy.stats.histfactory import measurements_from_xml
-
+        
     def read(xml):
         xml = os.path.abspath(os.path.normpath(xml))
         log.info("parsing XML in {0} ...".format(xml))
         # cd to parent directory of the XML where the ROOT file containing the histograms should sit
         xml_directory = os.path.dirname(xml)
         parent = os.path.abspath(os.path.join(xml_directory, os.pardir))
-        # patch input XML
-        patch_xml(xml_directory)
         with working_directory(parent):
             meas = measurements_from_xml(xml, collect_histograms=True, silence=not args.verbose)
         return meas
 
+    if args.op == 'patch':
+        
+        patch_xml(args.files, float_precision=args.precision)
+        sys.exit(0)
+
+    context = do_nothing if args.verbose else silence_sout
+    log.info("loading RooStats ...")
+    with context():
+        from rootpy.stats.histfactory import measurements_from_xml
+
     if args.op == 'diff':
 
-        left_measurement = read(args.left)[0]
-        right_measurement = read(args.right)[0]
-        if diff_measurements(left_measurement,
-                             right_measurement,
-                             precision=args.precision):
-            log.warning("measurements differ")
+        left = read(args.left)
+        right = read(args.right)
+        _diff_sequence_helper(left, right,
+            diff_func=diff_measurements, parent=None, precision=args.precision)
 
     elif args.op == 'ws':
         
