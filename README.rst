@@ -10,13 +10,14 @@ This script can:
   issues that trigger HistFactory bugs
 * list the differences between two workspaces (including differences at the
   histogram level)
-* fill empty background bins with the average sample weights
+* convert histograms to uniform binning
 * rebin histograms
 * merge specific bins in histograms
 * smooth shape (HistoSys) systematics
 * prune normalization (OverallSys) systematics
-* prune shape (HistoSys) systematics by three separate methods (maximum
-  deviation relative to total background statistical uncertainty, Chi2, and KS)
+* prune shape (HistoSys) systematics by three separate methods: maximum
+  deviation relative to total background statistical uncertainty, Chi2, and KS
+* fill empty background bins with the average sample weights
 
 A new ROOT file and new set of XML files will be written out alongside the
 input files with one or more of the above modifications.
