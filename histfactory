@@ -1,13 +1,8 @@
 #!/usr/bin/env python
 
 import os
-import sys
-import re
-import shutil
-from glob import glob
 from math import sqrt
 from itertools import izip
-from contextlib import contextmanager
 
 import ROOT
 import rootpy; rootpy.log.basic_config_colorized()
@@ -322,105 +317,6 @@ def is_signal(sample, poi='SigXsecOverSM'):
     return False
 
 
-@contextmanager
-def working_directory(path):
-    """
-    A context manager which changes the working directory to the given
-    path, and then changes it back to its previous value on exit.
-    """
-    prev_cwd = os.getcwd()
-    os.chdir(path)
-    try:
-        yield
-    finally:
-        os.chdir(prev_cwd)
-
-
-def patch_xml(files, root_file=None, float_precision=3):
-    """
-    Apply patches to HistFactory XML output from PrintXML
-    """
-    if float_precision < 0:
-        raise ValueError("precision must be greater than 0")
-    for xmlfilename in files:
-        xmlfilename = os.path.abspath(os.path.normpath(xmlfilename))
-        patched_xmlfilename = '{0}.tmp'.format(xmlfilename)
-        log.info("patching {0} ...".format(xmlfilename))
-        fin = open(xmlfilename, 'r')
-        fout = open(patched_xmlfilename, 'w')
-        for line in fin:
-            if root_file is not None:
-                line = line.replace('InputFile=""', 'InputFile="{0}"'.format(root_file))
-            line = line.replace(
-                '<StatError Activate="True"  InputFile=""  HistoName=""  HistoPath=""  />',
-                '<StatError Activate="True" />')
-            line = re.sub(
-                '<Combination OutputFilePrefix="(\S*)" >',
-                '<Combination OutputFilePrefix="hist2workspace" >', line)
-            line = re.sub('\w+=""', '', line)
-            line = re.sub('\s+/>', ' />', line)
-            line = re.sub('(\S)\s+</', r'\1</', line)
-            # HistFactory bug:
-            line = re.sub('InputFileHigh="\S+"', '', line)
-            line = re.sub('InputFileLow="\S+"', '', line)
-            line = line.replace('<Input>./workspaces/', '<Input>./')
-            # HistFactory bug:
-            line = line.replace('<ParamSetting Const="True"></ParamSetting>', '')
-            # chop off floats to desired precision
-            line = re.sub(r'"(\d*\.\d{{{0:d},}})"'.format(float_precision + 1),
-                          lambda x: '"{0}"'.format(str(round(float(x.group(1)), float_precision))),
-                          line)
-            line = re.sub('"\s\s+(\S)', r'" \1', line)
-            fout.write(line)
-        fin.close()
-        fout.close()
-        shutil.move(patched_xmlfilename, xmlfilename)
-        if not os.path.isfile(os.path.join(
-                              os.path.dirname(xmlfilename),
-                              'HistFactorySchema.dtd')):
-            rootsys = os.getenv('ROOTSYS', None)
-            if rootsys is not None:
-                dtdfile = os.path.join(rootsys, 'etc/HistFactorySchema.dtd')
-                target = os.path.dirname(xmlfilename)
-                if os.path.isfile(dtdfile):
-                    log.info("copying {0} to {1} ...".format(dtdfile, target))
-                    shutil.copy(dtdfile, target)
-                else:
-                    log.warning("{0} does not exist".format(dtdfile))
-            else:
-                log.warning("$ROOTSYS is not set so cannot find HistFactorySchema.dtd")
-
-
-def write_measurement(m, output_suffix=None, silence=False):
-    context = silence_sout if silence else do_nothing
-    with context():
-        from rootpy.stats.histfactory import make_model
-    output_name = m.name
-    if output_suffix is not None:
-        output_name += '_{0}'.format(output_suffix)
-    root_output = 'ws_{0}.root'.format(output_name)
-    xml_output = 'xml_{0}'.format(output_name)
-    with root_open(root_output, 'recreate') as out:
-        log.info("writing histograms and measurement in {0} ...".format(root_output))
-        with context():
-            m.writeToFile(out)
-        # get modified measurement
-        out_m = out[m.name]
-        with context():
-            out_m.PrintXML(xml_output)
-        log.info("writing combined model in {0} ...".format(root_output))
-        workspace = make_model(m, silence=True)
-        workspace.Write()
-        for channel in m.channels:
-            log.info("writing model for channel `{0}` in {1} ...".format(channel.name, root_output))
-            workspace = make_model(m, channel=channel, silence=True)
-            workspace.Write()
-        log.info("writing XML in {0} ...".format(xml_output))
-        with context():
-            out_m.PrintXML(xml_output)
-    patch_xml(glob(os.path.join(xml_output, '*.xml')), root_file=root_output)
-
-
 def equal(left, right, precision=1E-7):
     return abs(left - right) < precision
 
@@ -698,32 +594,24 @@ input files with one or more of the above modifications.""")
     parser_ws.add_argument('xmlfile')
     parser_ws.set_defaults(op='ws')
     args = parser.parse_args()
-        
-        
-    def read(xml):
-        xml = os.path.abspath(os.path.normpath(xml))
-        log.info("parsing XML in {0} ...".format(xml))
-        # cd to parent directory of the XML where the ROOT file containing the histograms should sit
-        xml_directory = os.path.dirname(xml)
-        parent = os.path.abspath(os.path.join(xml_directory, os.pardir))
-        with working_directory(parent):
-            meas = measurements_from_xml(xml, collect_histograms=True, silence=not args.verbose)
-        return meas
-
-    if args.op == 'patch':
-        
-        patch_xml(args.files, float_precision=args.precision)
-        sys.exit(0)
-
+    
     context = do_nothing if args.verbose else silence_sout
     log.info("loading RooStats ...")
     with context():
-        from rootpy.stats.histfactory import measurements_from_xml
+        from rootpy.stats.histfactory import measurements_from_xml, write_measurement, patch_xml
+    
+    if args.op == 'patch':
+        
+        patch_xml(args.files, float_precision=args.precision)
 
-    if args.op == 'diff':
+    elif args.op == 'diff':
 
-        left = read(args.left)
-        right = read(args.right)
+        left = measurements_from_xml(
+            args.left, cd_parent=True,
+            collect_histograms=True, silence=not args.verbose)
+        right = measurements_from_xml(
+            args.right, cd_parent=True,
+            collect_histograms=True, silence=not args.verbose)
         _diff_sequence_helper(left, right,
             diff_func=diff_measurements, parent=None, precision=args.precision)
 
@@ -733,7 +621,9 @@ input files with one or more of the above modifications.""")
             args.merge_bins = [
                 map(int, token.split(':')) for token in args.merge_bins]
                 
-        meas = read(args.xmlfile)
+        meas = measurements_from_xml(
+            args.xmlfile, cd_parent=True,
+            collect_histograms=True, silence=not args.verbose)
 
         for m in meas:
             process_measurement(m,
