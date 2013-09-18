@@ -591,6 +591,9 @@ input files with one or more of the above modifications.""")
              "will have the same names as the measurement names. You "
              "may optionally add a suffix to these names with this option.")
 
+    parser_ws.add_argument('--output-path', default=None,
+        help="Write output under this path (default: current directory)")
+
     parser_ws.add_argument('xmlfile')
     parser_ws.set_defaults(op='ws')
     args = parser.parse_args()
@@ -646,6 +649,7 @@ input files with one or more of the above modifications.""")
                 prune_overallsys_threshold=args.prune_overallsys_threshold,
                 uniform_binning=args.uniform_binning)
             write_measurement(m,
+                output_path=args.output_path,
                 output_suffix=args.output_suffix,
                 write_workspaces=True,
                 silence=not args.verbose)
