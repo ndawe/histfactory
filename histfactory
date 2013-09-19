@@ -23,7 +23,7 @@ def process_measurement(m,
                         rebin_channels=None,
                         merge_bins=None,
                         merge_bins_channels=None,
-                        drop_np=None,
+                        drop_np_names=None,
                         drop_np_types=None,
                         drop_np_samples=None,
                         drop_np_channels=None,
@@ -46,7 +46,7 @@ def process_measurement(m,
             m.name, c.name))
 
         # drop NPs by name
-        if drop_np and matched(c.name, drop_np_channels):
+        if drop_np_names and matched(c.name, drop_np_channels):
             for s in c.samples:
                 if not matched(s.name, drop_np_samples):
                     continue
@@ -609,7 +609,7 @@ input files with one or more of the above modifications.""")
     parser_ws.add_argument('--merge-bins-channels', nargs='*',
         help="Restrict bin merging to these channels (default: all channels)")
 
-    parser_ws.add_argument('--drop-np', nargs='*',
+    parser_ws.add_argument('--drop-np-names', nargs='*',
         help="Remove specific NPs by name")
     parser_ws.add_argument('--drop-np-types', nargs='*',
         help="If --drop-np is used, restrict the removal to NPs of this type (histosys, overallsys, ...)")
@@ -700,7 +700,7 @@ input files with one or more of the above modifications.""")
                 rebin_channels=args.rebin_channels,
                 merge_bins=args.merge_bins,
                 merge_bins_channels=args.merge_bins_channels,
-                drop_np=args.drop_np,
+                drop_np_names=args.drop_np_names,
                 drop_np_types=args.drop_np_types,
                 drop_np_samples=args.drop_np_samples,
                 drop_np_channels=args.drop_np_channels,
