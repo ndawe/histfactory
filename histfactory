@@ -3,6 +3,7 @@
 import os
 from math import sqrt
 from itertools import izip
+from fnmatch import fnmatch
 
 import ROOT
 import rootpy; rootpy.log.basic_config_colorized()
@@ -22,24 +23,57 @@ def process_measurement(m,
                         rebin_channels=None,
                         merge_bins=None,
                         merge_bins_channels=None,
+                        drop_np=None,
+                        drop_np_types=None,
+                        drop_np_samples=None,
+                        drop_np_channels=None,
                         smooth_histosys=False,
                         smooth_histosys_channels=None,
                         smooth_histosys_iterations=1,
                         prune_histosys=False,
+                        prune_histosys_samples=None,
                         prune_histosys_channels=None,
                         prune_histosys_method='max',
                         prune_histosys_threshold=0.1,
                         prune_overallsys=False,
+                        prune_overallsys_samples=None,
                         prune_overallsys_channels=None,
                         prune_overallsys_threshold=0.5,
                         uniform_binning=False):
 
     for c in m.channels:
-        log.info(
-            "processing measurement `{0}` channel `{1}` ...".format(
-                m.name, c.name))
+        log.info("processing measurement `{0}` channel `{1}` ...".format(
+            m.name, c.name))
+
+        # drop NPs by name
+        if drop_np and matched(c.name, drop_np_channels):
+            for s in c.samples:
+                if not matched(s.name, drop_np_samples):
+                    continue
+                if matched('histosys', drop_np_types, ignore_case=True):
+                    names = []
+                    for np in s.histo_sys:
+                        if matched(np.name, drop_np_names, ignore_case=True):
+                            names.append(np.name)
+                    
+                    for name in names:
+                        log.info(
+                            "removing HistoSys `{0}` from sample `{1}`".format(name, s.name))
+                        s.RemoveHistoSys(name)
+
+                if matched('overallsys', drop_np_types, ignore_case=True):
+                    names = []
+                    for np in s.overall_sys:
+                        if matched(np.name, drop_np_names, ignore_case=True):
+                            names.append(np.name)
+
+                    for name in names:
+                        log.info(
+                            "removing OverallSys `{0}` from sample `{1}`".format(name, s.name))
+                        s.RemoveOverallSys(name)
+
         # rebin
-        if rebin != 1 and (not rebin_channels or c.name in rebin_channels):
+        if rebin != 1 and matched(c.name, rebin_channels):
             c.data.hist = apply_rebin(c.data.hist, rebin)
             for s in c.samples:
                 log.info("applying rebinning {0:d} on sample `{1}`".format(rebin, s.name))
@@ -49,7 +83,7 @@ def process_measurement(m,
                     histosys.low = apply_rebin(histosys.low, rebin)
 
         # merge bins
-        if merge_bins and (not merge_bins_channels or c.name in merge_bins_channels):
+        if merge_bins and matched(c.name, merge_bins_channels):
             c.data.hist = apply_merge_bins(c.data.hist, merge_bins)
             for s in c.samples:
                 log.info("merging bins {0} in sample `{1}`".format(
@@ -61,9 +95,9 @@ def process_measurement(m,
                     histosys.low = apply_merge_bins(histosys.low, merge_bins)
 
         # apply fill_empties
-        if fill_empties and (not fill_empties_channels or c.name in fill_empties_channels):
+        if fill_empties and matched(c.name, fill_empties_channels):
             for s in c.samples:
-                if fill_empties_samples and s.name not in fill_empties_samples:
+                if not matched(s.name, fill_empties_samples):
                     continue
                 if not is_signal(s):
                     log.info("applying fill_empties on sample `{0}`".format(s.name))
@@ -73,27 +107,28 @@ def process_measurement(m,
                         histosys.low = apply_fill_empties(histosys.low)
 
         # smooth
-        if smooth_histosys and (not smooth_histosys_channels or c.name in smooth_histosys_channels):
+        if smooth_histosys and matched(c.name, smooth_histosys_channels):
             for s in c.samples:
                 for histosys in s.histo_sys:
                     smooth_shape(s.hist, histosys, smooth_histosys_iterations)
 
         # prune shapes
-        if prune_histosys and (not prune_histosys_channels or c.name in prune_histosys_channels):
+        if prune_histosys and matched(c.name, prune_histosys_channels):
             
             # total bkg needed for max method
             if prune_histosys_method == 'max':
                 total_bkg = sum([s.hist.Clone(shallow=True) for s in c.samples if not is_signal(s)])
+                total_sig = sum([s.hist.Clone(shallow=True) for s in c.samples if is_signal(s)])
 
             for s in c.samples:
-                # don't prune shapes from signal
-                if is_signal(s):
+                if not matched(s.name, prune_histosys_samples):
                     continue
-
                 names = []
                 if prune_histosys_method == 'max':
                     for histosys in s.histo_sys:
-                        if not shape_is_significant(total_bkg, histosys.high, histosys.low, prune_histosys_threshold):
+                        if not shape_is_significant(total_sig if is_signal(s) else total_bkg,
+                                                    histosys.high, histosys.low,
+                                                    prune_histosys_threshold):
                             names.append(histosys.name)
 
                 elif prune_histosys_method == 'chi2':
@@ -113,8 +148,10 @@ def process_measurement(m,
                     s.RemoveHistoSys(name)
 
         # prune overallsys
-        if prune_overallsys and (not prune_overallsys_channels or c.name in prune_overallsys_channels):
+        if prune_overallsys and matched(c.name, prune_overallsys_channels):
             for s in c.samples:
+                if not matched(s.name, prune_overallsys_samples):
+                    continue
                 names = []
                 for overallsys in s.overall_sys:
                     if (abs(overallsys.high - 1.) * 100. < prune_overallsys_threshold and
@@ -139,6 +176,19 @@ def process_measurement(m,
             for histosys in s.histo_sys:
                 histosys.high = zero_negs(histosys.high)
                 histosys.low = zero_negs(histosys.low)
+
+
+def matched(name, patterns, ignore_case=False):
+    if not patterns:
+        return True
+    if ignore_case:
+        name = name.lower()
+    for pattern in patterns:
+        if ignore_case:
+            pattern = pattern.lower()
+        if fnmatch(name, pattern):
+            return True
+    return False
 
 
 def shape_chi2_test(nom, up, down, threshold):
@@ -559,6 +609,15 @@ input files with one or more of the above modifications.""")
     parser_ws.add_argument('--merge-bins-channels', nargs='*',
         help="Restrict bin merging to these channels (default: all channels)")
 
+    parser_ws.add_argument('--drop-np', nargs='*',
+        help="Remove specific NPs by name")
+    parser_ws.add_argument('--drop-np-types', nargs='*',
+        help="If --drop-np is used, restrict the removal to NPs of this type (histosys, overallsys, ...)")
+    parser_ws.add_argument('--drop-np-samples', nargs='*',
+        help="If --drop-np is used, restrict the removal to NPs of these samples")
+    parser_ws.add_argument('--drop-np-channels', nargs='*',
+        help="If --drop-np is used, restrict the removal to NPs of these channels")
+
     parser_ws.add_argument('--smooth-histosys', action='store_true', default=False,
         help="Smooth HistoSys histograms (default: False)")
     parser_ws.add_argument('--smooth-histosys-iterations', type=int, default=1,
@@ -569,8 +628,10 @@ input files with one or more of the above modifications.""")
 
     parser_ws.add_argument('--prune-histosys', action='store_true', default=False,
         help="Enable HistoSys pruning")
+    parser_ws.add_argument('--prune-histosys-samples', nargs='*',
+        help="Restrict HistoSys pruning to these samples (default: all samples)")
     parser_ws.add_argument('--prune-histosys-channels', nargs='*',
-        help="Restrict HistoSys smoothing to these channels (default: all channels)")
+        help="Restrict HistoSys pruning to these channels (default: all channels)")
     parser_ws.add_argument('--prune-histosys-method', choices=('max', 'chi2', 'ks'), default='max',
         help="HistoSys pruning method. Choices: max, chi2, ks (default: max)")
     parser_ws.add_argument('--prune-histosys-threshold', type=float, default=0.1,
@@ -578,11 +639,13 @@ input files with one or more of the above modifications.""")
 
     parser_ws.add_argument('--prune-overallsys', action='store_true', default=False,
         help="Enable OverallSys pruning")
+    parser_ws.add_argument('--prune_overallsys-samples', nargs='*',
+        help="Restrict OverallSys pruning to these samples (default: all samples)")
     parser_ws.add_argument('--prune-overallsys-channels', nargs='*',
-        help="Restrict OverallSys smoothing to these channels (default: all channels)")
+        help="Restrict OverallSys pruning to these channels (default: all channels)")
     parser_ws.add_argument('--prune-overallsys-threshold', type=float, default=0.5,
         help="Threshold [%%] below which OverallSys components are dropped (default: 0.5)")
-
+    
     parser_ws.add_argument('--uniform-binning', action='store_true', default=False,
         help="Convert all histograms to uniform binning")
 
@@ -637,14 +700,20 @@ input files with one or more of the above modifications.""")
                 rebin_channels=args.rebin_channels,
                 merge_bins=args.merge_bins,
                 merge_bins_channels=args.merge_bins_channels,
+                drop_np=args.drop_np,
+                drop_np_types=args.drop_np_types,
+                drop_np_samples=args.drop_np_samples,
+                drop_np_channels=args.drop_np_channels,
                 smooth_histosys=args.smooth_histosys,
                 smooth_histosys_iterations=args.smooth_histosys_iterations,
                 smooth_histosys_channels=args.smooth_histosys_channels,
                 prune_histosys=args.prune_histosys,
+                prune_histosys_samples=args.prune_histosys_samples,
                 prune_histosys_channels=args.prune_histosys_channels,
                 prune_histosys_method=args.prune_histosys_method,
                 prune_histosys_threshold=args.prune_histosys_threshold,
                 prune_overallsys=args.prune_overallsys,
+                prune_overallsys_samples=args.prune_overallsys_samples,
                 prune_overallsys_channels=args.prune_overallsys_channels,
                 prune_overallsys_threshold=args.prune_overallsys_threshold,
                 uniform_binning=args.uniform_binning)
