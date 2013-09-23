@@ -10,9 +10,11 @@ This script can:
   issues that trigger HistFactory bugs
 * list the differences between two workspaces (including differences at the
   histogram level)
+* construct hybrid data from sum of background and signal
 * convert histograms to uniform binning
 * rebin histograms
 * merge specific bins in histograms
+* symmetrize systematics (HistoSys or OverallSys)
 * smooth shape (HistoSys) systematics
 * prune normalization (OverallSys) systematics
 * prune shape (HistoSys) systematics by three separate methods: maximum
