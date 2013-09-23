@@ -249,6 +249,9 @@ def process_measurement(m,
                     "not constructing hybrid data in channel `{0}` "
                     "because no signal is present".format(c.name))
             else:
+                log.info(
+                    "constructing hybrid data with mu={0:f} in bin {1:d} and above".format(
+                        hybrid_data_mu, blind_bin))
                 total_sig = sum(sigs)
                 hybrid_data = total_bkg + (total_sig * hybrid_data_mu)
                 for ibin in xrange(blind_bin, data_hist.nbins(0) + 2):
