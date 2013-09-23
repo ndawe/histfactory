@@ -787,7 +787,7 @@ input files with one or more of the above modifications.""")
     parser_ws.add_argument('--hybrid-data', action='store_true', default=False,
         help="Replace data with the sum of background and signal or if "
              "--data-is-partially-blind then only set the blinded bins to the "
-             "sum of backround and signal")
+             "sum of background and signal")
     parser_ws.add_argument('--hybrid-data-mu', type=float, default=1.0,
         help="The signal strength used to construct the hybrid data (default: 1.0)")
 
