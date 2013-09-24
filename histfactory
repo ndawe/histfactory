@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+# Author: Noel Dawe noel@dawe.me
+# License: GPLv3
 
 import os
 from math import sqrt
@@ -667,10 +669,11 @@ input files with one or more of the above modifications.""")
         help="Show this help message and exit")
 
     parser_diff.add_argument('-p', '--precision', type=float, default=1E-7,
+        metavar='float',
         help="Precision for comparing if two floats are equal (default: 1E-7)")
 
-    parser_diff.add_argument('left')
-    parser_diff.add_argument('right')
+    parser_diff.add_argument('left', metavar='TOP_LEVEL_MEASUREMENT_XML_A')
+    parser_diff.add_argument('right', metavar='TOP_LEVEL_MEASUREMENT_XML_B')
     parser_diff.set_defaults(op='diff')
 
     
@@ -682,9 +685,11 @@ input files with one or more of the above modifications.""")
         help="Show this help message and exit")
     
     parser_patch.add_argument('-p', '--precision', type=int, default=3,
+        metavar='float',
         help="Number of decimal places to keep in all floats (default: 3)")
 
     parser_patch.add_argument('files', nargs='+',
+        metavar='XML_FILE',
         help="HistFactory XML files")
     
     parser_patch.set_defaults(op='patch')
@@ -701,75 +706,97 @@ input files with one or more of the above modifications.""")
         help="Fill empty background bins per sample with the average weight and set "
              "the errors of these bins to sqrt(<w^2>)")
     parser_ws.add_argument('--fill-empties-samples', nargs='*',
+        metavar='SAMPLE_NAME',
         help="Restrict application of --fill-empties to these samples (default: all samples)")
     parser_ws.add_argument('--fill-empties-channels', nargs='*',
+        metavar='CHANNEL_NAME',
         help="Restrict application of --fill-empties to these channels (default: all channels)")
 
     parser_ws.add_argument('--rebin', type=int, default=1,
         help="Rebin histograms by grouping each N bins. "
              "Use --rebin 2 to merge every group of 2 bins (default: no rebinning)")
     parser_ws.add_argument('--rebin-channels', nargs='*',
+        metavar='CHANNEL_NAME',
         help="Restrict the rebinning to these channels (default: all channels)")
 
     parser_ws.add_argument('--merge-bins', nargs='*',
+        metavar='LOW:HIGH',
         help="Merge bins by ranges of bin indices. "
              "For example, use 1:-12 to merge left bins such that 10 bins on the right "
              "are untouched. Use 1:5 6:10 to merge bins 1 to 5 into one bin and 6 to 10 into one bin. "
              "Note that overflow bin indices are included in the indexing and "
              "that bin index ranges are inclusive of the low and high indices. (default: do not merge bins)")
     parser_ws.add_argument('--merge-bins-channels', nargs='*',
+        metavar='CHANNEL_NAME',
         help="Restrict bin merging to these channels (default: all channels)")
 
     parser_ws.add_argument('--drop-np-names', nargs='*',
+        metavar='NP_NAME',
         help="Remove specific NPs by name")
     parser_ws.add_argument('--drop-np-types', nargs='*',
+        metavar='NP_TYPE',
         help="If --drop-np-names is used, restrict the removal to NPs of this type (histosys, overallsys)")
     parser_ws.add_argument('--drop-np-samples', nargs='*',
+        metavar='SAMPLE_NAME',
         help="If --drop-np-names is used, restrict the removal to NPs of these samples")
     parser_ws.add_argument('--drop-np-channels', nargs='*',
+        metavar='CHANNEL_NAME',
         help="If --drop-np-names is used, restrict the removal to NPs of these channels")
     
     parser_ws.add_argument('--symmetrize-names', nargs='*',
+        metavar='NP_NAME',
         help="Symmetrize specific NPs by name")
     parser_ws.add_argument('--symmetrize-types', nargs='*',
+        metavar='NP_TYPE',
         help="If --symmetrize-names is used, restrict the symmetrization to NPs of this type (histosys, overallsys)")
     parser_ws.add_argument('--symmetrize-samples', nargs='*',
+        metavar='SAMPLE_NAME',
         help="If --symmetrize-names is used, restrict the symmetrization to NPs of these samples")
     parser_ws.add_argument('--symmetrize-channels', nargs='*',
+        metavar='CHANNEL_NAME',
         help="If --symmetrize-names is used, restrict the symmetrization to NPs of these channels")
 
     parser_ws.add_argument('--smooth-histosys', action='store_true', default=False,
         help="Smooth HistoSys histograms (default: False)")
     parser_ws.add_argument('--smooth-histosys-iterations', type=int, default=1,
+        metavar='int',
         help="Number of smoothing iterations in TH1::Smooth(N) to use when "
              "smoothing HistoSys (default: 1)")
     parser_ws.add_argument('--smooth-histosys-channels', nargs='*',
+        metavar='CHANNEL_NAME',
         help="Restrict HistoSys smoothing to these channels (default: all channels)")
 
     parser_ws.add_argument('--prune-histosys', action='store_true', default=False,
         help="Enable HistoSys pruning")
     parser_ws.add_argument('--prune-histosys-samples', nargs='*',
+        metavar='SAMPLE_NAME',
         help="Restrict HistoSys pruning to these samples (default: all samples)")
     parser_ws.add_argument('--prune-histosys-channels', nargs='*',
+        metavar='CHANNEL_NAME',
         help="Restrict HistoSys pruning to these channels (default: all channels)")
     parser_ws.add_argument('--prune-histosys-method', choices=('max', 'chi2', 'ks'), default='max',
         help="HistoSys pruning method. Choices: max, chi2, ks (default: max)")
     parser_ws.add_argument('--prune-histosys-threshold', type=float, default=0.1,
+        metavar='float',
         help="Threshold on HistoSys pruning method to determine if shape is significant (default: 0.1)")
 
     parser_ws.add_argument('--prune-overallsys', action='store_true', default=False,
         help="Enable OverallSys pruning")
     parser_ws.add_argument('--prune_overallsys-samples', nargs='*',
+        metavar='SAMPLE_NAME',
         help="Restrict OverallSys pruning to these samples (default: all samples)")
     parser_ws.add_argument('--prune-overallsys-channels', nargs='*',
+        metavar='CHANNEL_NAME',
         help="Restrict OverallSys pruning to these channels (default: all channels)")
     parser_ws.add_argument('--prune-overallsys-threshold', type=float, default=0.5,
+        metavar='float',
         help="Threshold [%%] below which OverallSys components are dropped (default: 0.5)")
     
     parser_ws.add_argument('--uniform-binning', action='store_true', default=False,
         help="Convert all histograms to uniform binning")
 
     parser_ws.add_argument('--output-suffix', default=None,
+        metavar='string',
         help="The output ROOT file and directory containing the XML "
              "will have the same names as the measurement names. You "
              "may optionally add a suffix to these names with this option.")
@@ -789,12 +816,14 @@ input files with one or more of the above modifications.""")
              "--data-is-partially-blind then only set the blinded bins to the "
              "sum of background and signal")
     parser_ws.add_argument('--hybrid-data-mu', type=float, default=1.0,
+        metavar='float',
         help="The signal strength used to construct the hybrid data (default: 1.0)")
 
     parser_ws.add_argument('--output-path', default=None,
+        metavar='PATH',
         help="Write output under this path (default: current directory)")
 
-    parser_ws.add_argument('xmlfile')
+    parser_ws.add_argument('xmlfile', metavar='TOP_LEVEL_MEASUREMENT_XML')
     parser_ws.set_defaults(op='ws')
     args = parser.parse_args()
     
