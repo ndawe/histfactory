@@ -45,12 +45,14 @@ def process_measurement(m,
                         prune_histosys=False,
                         prune_histosys_samples=None,
                         prune_histosys_channels=None,
+                        prune_histosys_blacklist=None,
                         prune_histosys_method='max',
                         prune_histosys_threshold=0.1,
 
                         prune_overallsys=False,
                         prune_overallsys_samples=None,
                         prune_overallsys_channels=None,
+                        prune_overallsys_blacklist=None,
                         prune_overallsys_threshold=0.5,
 
                         uniform_binning=False,
@@ -160,6 +162,10 @@ def process_measurement(m,
                 names = []
                 if prune_histosys_method == 'max':
                     for histosys in s.histo_sys:
+                        if prune_histosys_blacklist and matched(
+                                histosys.name,
+                                prune_histosys_blacklist):
+                            continue
                         if not shape_is_significant(total_sig if is_signal(s) else total_bkg,
                                                     histosys.high, histosys.low,
                                                     prune_histosys_threshold):
@@ -167,11 +173,19 @@ def process_measurement(m,
 
                 elif prune_histosys_method == 'chi2':
                     for histosys in s.histo_sys:
+                        if prune_histosys_blacklist and matched(
+                                histosys.name,
+                                prune_histosys_blacklist):
+                            continue
                         if not shape_chi2_test(s.hist, histosys.high, histosys.low, prune_histosys_threshold):
                             names.append(histosys.name)
 
                 elif prune_histosys_method == 'ks':
                     for histosys in s.histo_sys:
+                        if prune_histosys_blacklist and matched(
+                                histosys.name,
+                                prune_histosys_blacklist):
+                            continue
                         if (histosys.high.KolmogorovTest(s.hist) < prune_histosys_threshold and
                             histosys.low.KolmogorovTest(s.hist) < prune_histosys_threshold):
                             names.append(histosys.name)
@@ -188,6 +202,10 @@ def process_measurement(m,
                     continue
                 names = []
                 for overallsys in s.overall_sys:
+                    if prune_overallsys_blacklist and matched(
+                            overallsys.name,
+                            prune_overallsys_blacklist):
+                        continue
                     if (abs(overallsys.high - 1.) * 100. < prune_overallsys_threshold and
                         abs(overallsys.low - 1.) * 100. < prune_overallsys_threshold):
                         names.append(overallsys.name)
@@ -774,6 +792,9 @@ input files with one or more of the above modifications.""")
     parser_ws.add_argument('--prune-histosys-channels', nargs='*',
         metavar='CHANNEL_NAME',
         help="Restrict HistoSys pruning to these channels (default: all channels)")
+    parser_ws.add_argument('--prune-histosys-blacklist', nargs='*',
+        metavar='NP_NAME',
+        help="Do not allow pruning of these HistoSys (default: none)")
     parser_ws.add_argument('--prune-histosys-method', choices=('max', 'chi2', 'ks'), default='max',
         help="HistoSys pruning method. Choices: max, chi2, ks (default: max)")
     parser_ws.add_argument('--prune-histosys-threshold', type=float, default=0.1,
@@ -782,12 +803,15 @@ input files with one or more of the above modifications.""")
 
     parser_ws.add_argument('--prune-overallsys', action='store_true', default=False,
         help="Enable OverallSys pruning")
-    parser_ws.add_argument('--prune_overallsys-samples', nargs='*',
+    parser_ws.add_argument('--prune-overallsys-samples', nargs='*',
         metavar='SAMPLE_NAME',
         help="Restrict OverallSys pruning to these samples (default: all samples)")
     parser_ws.add_argument('--prune-overallsys-channels', nargs='*',
         metavar='CHANNEL_NAME',
         help="Restrict OverallSys pruning to these channels (default: all channels)")
+    parser_ws.add_argument('--prune-overallsys-blacklist', nargs='*',
+        metavar='NP_NAME',
+        help="Do not allow pruning of these OverallSys (default: none)")
     parser_ws.add_argument('--prune-overallsys-threshold', type=float, default=0.5,
         metavar='float',
         help="Threshold [%%] below which OverallSys components are dropped (default: 0.5)")
@@ -886,12 +910,14 @@ input files with one or more of the above modifications.""")
                 prune_histosys=args.prune_histosys,
                 prune_histosys_samples=args.prune_histosys_samples,
                 prune_histosys_channels=args.prune_histosys_channels,
+                prune_histosys_blacklist=args.prune_histosys_blacklist,
                 prune_histosys_method=args.prune_histosys_method,
                 prune_histosys_threshold=args.prune_histosys_threshold,
 
                 prune_overallsys=args.prune_overallsys,
                 prune_overallsys_samples=args.prune_overallsys_samples,
                 prune_overallsys_channels=args.prune_overallsys_channels,
+                prune_overallsys_blacklist=args.prune_overallsys_blacklist,
                 prune_overallsys_threshold=args.prune_overallsys_threshold,
 
                 uniform_binning=args.uniform_binning,
