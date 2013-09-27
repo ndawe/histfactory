@@ -28,6 +28,8 @@ def process_measurement(m,
                         merge_bins=None,
                         merge_bins_channels=None,
 
+                        flat_signal=None,
+
                         drop_np_names=None,
                         drop_np_types=None,
                         drop_np_samples=None,
@@ -92,6 +94,27 @@ def process_measurement(m,
                         log.info(
                             "removing OverallSys `{0}` from sample `{1}`".format(name, s.name))
                         s.RemoveOverallSys(name)
+        
+        # flat signal binning
+        if flat_signal is not None:
+            sig = [s for s in c.samples if is_signal(s)]
+            if sig:
+                # get sum of signal
+                total_sig = sum([s.hist.Clone(shallow=True) for s in sig])
+                # get N quantiles
+                quantiles = total_sig.quantiles(flat_signal, strict=True)
+                # rebin all histos
+                c.data.hist = apply_rebin(c.data.hist, quantiles)
+                for s in c.samples:
+                    log.info("applying rebinning {0} on sample `{1}`".format(quantiles, s.name))
+                    s.hist = apply_rebin(s.hist, quantiles)
+                    for histosys in s.histo_sys:
+                        histosys.high = apply_rebin(histosys.high, quantiles)
+                        histosys.low = apply_rebin(histosys.low, quantiles)
+            else:
+                log.warning(
+                    "not rebinning to flatten signal in category `{0}` "
+                    "since no signal is present".format(c.name))
 
         # rebin
         if rebin != 1 and matched(c.name, rebin_channels):
@@ -453,14 +476,17 @@ def apply_merge_bins(hist, bin_ranges, axis=0):
     return new_hist
 
 
-def apply_rebin(hist, n):
+def apply_rebin(hist, bins, axis=0):
     """
-    Rebin the histogram with TH1::Rebin
+    Rebin the histogram
     """
-    if n < 2:
+    if isinstance(bins, int) and bins < 2:
         return hist
-    new_hist = hist.Clone(name=hist.name + '_rebin_{0:d}'.format(n), shallow=True)
-    new_hist.Rebin(n)
+    new_hist = hist.rebinned(bins, axis=0)
+    if isinstance(bins, int):
+        new_hist.name = hist.name + '_rebin_{0:d}'.format(n)
+    else:
+        new_hist.name = hist.name + '_rebinned'
     return new_hist
 
 
@@ -731,6 +757,7 @@ input files with one or more of the above modifications.""")
         help="Restrict application of --fill-empties to these channels (default: all channels)")
 
     parser_ws.add_argument('--rebin', type=int, default=1,
+        metavar='int',
         help="Rebin histograms by grouping each N bins. "
              "Use --rebin 2 to merge every group of 2 bins (default: no rebinning)")
     parser_ws.add_argument('--rebin-channels', nargs='*',
@@ -747,6 +774,12 @@ input files with one or more of the above modifications.""")
     parser_ws.add_argument('--merge-bins-channels', nargs='*',
         metavar='CHANNEL_NAME',
         help="Restrict bin merging to these channels (default: all channels)")
+
+    parser_ws.add_argument('--flat-signal', type=int, default=None,
+        metavar='int',
+        help="Rebin all histograms such that signal is flat. "
+             "Specify the number of quantiles to use as bin edges in the "
+             "rebinned histogram.")
 
     parser_ws.add_argument('--drop-np-names', nargs='*',
         metavar='NP_NAME',
@@ -892,6 +925,8 @@ input files with one or more of the above modifications.""")
 
                 merge_bins=args.merge_bins,
                 merge_bins_channels=args.merge_bins_channels,
+
+                flat_signal=args.flat_signal,
 
                 drop_np_names=args.drop_np_names,
                 drop_np_types=args.drop_np_types,
