@@ -104,7 +104,24 @@ def process_measurement(m,
                 # get N quantiles
                 quantiles = total_sig.quantiles(flat_signal, strict=True)
                 # rebin all histos
-                c.data.hist = apply_rebin(c.data.hist, quantiles)
+                
+                data_hist = c.data.hist
+                if data_is_partially_blind:
+                    # determine first blinded bin
+                    for ibin in xrange(data_hist.nbins(0), 0, -1):
+                        if data_hist.GetBinContent(ibin) > 0:
+                            break
+                    log.info("detected data blinding in bin {0:d} and above".format(ibin + 1))
+                    blind_cut = data_hist.GetBinCenter(ibin + 1)
+                data_hist = apply_rebin(data_hist, quantiles)
+                if data_is_partially_blind:
+                    # blind from bin containing blind_cut
+                    blind_bin = data_hist.FindBin(blind_cut)
+                    for ibin in xrange(blind_bin, data_hist.nbins(0) + 2):
+                        data_hist.SetBinContent(ibin + 1, 0)
+                        data_hist.SetBinError(ibin + 1, 0)
+                c.data.hist = data_hist
+
                 for s in c.samples:
                     log.info("applying rebinning {0} on sample `{1}`".format(quantiles, s.name))
                     s.hist = apply_rebin(s.hist, quantiles)
