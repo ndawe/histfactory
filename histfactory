@@ -484,7 +484,7 @@ def apply_rebin(hist, bins, axis=0):
         return hist
     new_hist = hist.rebinned(bins, axis=0)
     if isinstance(bins, int):
-        new_hist.name = hist.name + '_rebin_{0:d}'.format(n)
+        new_hist.name = hist.name + '_rebin_{0:d}'.format(bins)
     else:
         new_hist.name = hist.name + '_rebinned'
     return new_hist
