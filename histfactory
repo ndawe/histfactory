@@ -10,7 +10,7 @@ from fnmatch import fnmatch
 import ROOT
 import rootpy; rootpy.log.basic_config_colorized()
 from rootpy.io import root_open
-from rootpy.plotting import Hist
+from rootpy.plotting import Hist, Hist2D, Hist3D
 from rootpy.utils.silence import silence_sout
 from rootpy.context import do_nothing
 
