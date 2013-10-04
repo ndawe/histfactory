@@ -18,6 +18,8 @@ import logging; log = logging.getLogger(os.path.basename(__file__))
 
 
 def process_measurement(m,
+                        split_norm_shape=False,
+
                         fill_empties=False,
                         fill_empties_samples=None,
                         fill_empties_channels=None,
@@ -169,6 +171,11 @@ def process_measurement(m,
                 for histosys in s.histo_sys:
                     histosys.high = apply_merge_bins(histosys.high, merge_bins)
                     histosys.low = apply_merge_bins(histosys.low, merge_bins)
+        
+        # split HistoSys into HistoSys and OverallSys components
+        if split_norm_shape:
+            for s in c.samples:
+                apply_split_norm_shape(s)
 
         # apply fill_empties
         if fill_empties and matched(c.name, fill_empties_channels):
@@ -330,6 +337,15 @@ def matched(name, patterns, ignore_case=False):
         if fnmatch(name, pattern):
             return True
     return False
+
+
+def apply_split_norm_shape(s):
+    from rootpy.stats.histfactory import split_norm_shape
+    for histosys in s.histo_sys:
+        norm, shape = split_norm_shape(histosys, s.hist)
+        histosys.high = shape.high
+        histosys.low = shape.low
+        s.AddOverallSys(norm)
 
 
 def symmetrize_histosys(np, nominal):
@@ -762,6 +778,9 @@ input files with one or more of the above modifications.""")
     
     parser_ws.add_argument('-h', '--help', action='help',
         help="Show this help message and exit")
+
+    parser_ws.add_argument('--split-norm-shape', action='store_true', default=False,
+        help="Split HistoSys into OverallSys and HistoSys components")
     
     parser_ws.add_argument('--fill-empties', action='store_true', default=False,
         help="Fill empty background bins per sample with the average weight and set "
@@ -933,6 +952,8 @@ input files with one or more of the above modifications.""")
 
         for m in meas:
             process_measurement(m,
+                split_norm_shape=args.split_norm_shape,
+
                 fill_empties=args.fill_empties,
                 fill_empties_samples=args.fill_empties_samples,
                 fill_empties_channels=args.fill_empties_channels,
