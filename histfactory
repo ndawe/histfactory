@@ -69,34 +69,7 @@ def process_measurement(m,
     for c in m.channels:
         log.info("processing measurement `{0}` channel `{1}` ...".format(
             m.name, c.name))
-
-        # drop NPs by name
-        if drop_np_names and matched(c.name, drop_np_channels):
-            for s in c.samples:
-                if not matched(s.name, drop_np_samples):
-                    continue
-                if matched('histosys', drop_np_types, ignore_case=True):
-                    names = []
-                    for np in s.histo_sys:
-                        if matched(np.name, drop_np_names, ignore_case=True):
-                            names.append(np.name)
-                    
-                    for name in names:
-                        log.info(
-                            "removing HistoSys `{0}` from sample `{1}`".format(name, s.name))
-                        s.RemoveHistoSys(name)
-
-                if matched('overallsys', drop_np_types, ignore_case=True):
-                    names = []
-                    for np in s.overall_sys:
-                        if matched(np.name, drop_np_names, ignore_case=True):
-                            names.append(np.name)
-
-                    for name in names:
-                        log.info(
-                            "removing OverallSys `{0}` from sample `{1}`".format(name, s.name))
-                        s.RemoveOverallSys(name)
-        
+         
         # flat signal binning
         if flat_signal is not None:
             sig = [s for s in c.samples if is_signal(s)]
@@ -176,6 +149,33 @@ def process_measurement(m,
         if split_norm_shape:
             for s in c.samples:
                 apply_split_norm_shape(s)
+
+        # drop NPs by name
+        if drop_np_names and matched(c.name, drop_np_channels):
+            for s in c.samples:
+                if not matched(s.name, drop_np_samples):
+                    continue
+                if matched('histosys', drop_np_types, ignore_case=True):
+                    names = []
+                    for np in s.histo_sys:
+                        if matched(np.name, drop_np_names, ignore_case=True):
+                            names.append(np.name)
+                    
+                    for name in names:
+                        log.info(
+                            "removing HistoSys `{0}` from sample `{1}`".format(name, s.name))
+                        s.RemoveHistoSys(name)
+
+                if matched('overallsys', drop_np_types, ignore_case=True):
+                    names = []
+                    for np in s.overall_sys:
+                        if matched(np.name, drop_np_names, ignore_case=True):
+                            names.append(np.name)
+
+                    for name in names:
+                        log.info(
+                            "removing OverallSys `{0}` from sample `{1}`".format(name, s.name))
+                        s.RemoveOverallSys(name)
 
         # apply fill_empties
         if fill_empties and matched(c.name, fill_empties_channels):
