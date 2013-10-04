@@ -435,14 +435,34 @@ def smooth_shape(nominal, histosys, iterations=1):
     TH1::Smooth() on the ratio of systematic / nominal.
     """
     log.info("smoothing HistoSys `{0}`".format(histosys.name))
-    high_name = histosys.high.name + '_smoothed_{0}'.format(iterations)
-    low_name = histosys.low.name + '_smoothed_{0}'.format(iterations)
-    ratio_high = histosys.high / nominal
-    ratio_low = histosys.low / nominal
+    high = histosys.high
+    low = histosys.low
+
+    high_name = high.name + '_smoothed_{0}'.format(iterations)
+    low_name = low.name + '_smoothed_{0}'.format(iterations)
+
+    nominal_high = nominal.Clone(shallow=True)
+    nominal_low = nominal.Clone(shallow=True)
+
+    for bin_high, bin_nom in izip(high.bins(overflow=True),
+            nominal_high.bins(overflow=True)):
+        if bin_nom.value == 0:
+            bin_nom.value = bin_high.value
+    
+    for bin_low, bin_nom in izip(low.bins(overflow=True),
+            nominal_low.bins(overflow=True)):
+        if bin_nom.value == 0:
+            bin_nom.value = bin_low.value
+
+    ratio_high = high / nominal_high
+    ratio_low = low / nominal_low
+
     ratio_high.Smooth(iterations)
     ratio_low.Smooth(iterations)
-    histosys.high = ratio_high * nominal
-    histosys.low = ratio_low * nominal
+
+    histosys.high = ratio_high * nominal_high
+    histosys.low = ratio_low * nominal_low
+
     histosys.high.name = high_name
     histosys.low.name = low_name
 
