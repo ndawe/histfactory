@@ -446,12 +446,12 @@ def smooth_shape(nominal, histosys, iterations=1):
 
     for bin_high, bin_nom in izip(high.bins(overflow=True),
             nominal_high.bins(overflow=True)):
-        if bin_nom.value == 0:
+        if bin_nom.value < 1E-3:
             bin_nom.value = bin_high.value
     
     for bin_low, bin_nom in izip(low.bins(overflow=True),
             nominal_low.bins(overflow=True)):
-        if bin_nom.value == 0:
+        if bin_nom.value < 1E-3:
             bin_nom.value = bin_low.value
 
     ratio_high = high / nominal_high
