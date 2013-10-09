@@ -552,16 +552,19 @@ def apply_fill_empties(hist):
 
     sumW2TotBin = sum([bin.error**2 for bin in hist.bins()])
     avWeightBin = hist.GetSumOfWeights() / hist.GetEntries()
-    avW2Bin = sumW2TotBin / hist.GetEntries()
+    sqrt_avW2Bin = sqrt(sumW2TotBin / hist.GetEntries())
 
     applied = False
     for bin in fixed_hist.bins():
         if bin.value < 1E-6:
             log.warning(
-                "filling empty or negative bin {0:d} in `{1}` with average weight".format(
-                    bin.idx, hist.name))
+                "filling bin {0:d} containing {1:f}+/-{2:f} in "
+                "`{3}` with average weight {4:f}+/-{5:f}".format(
+                    bin.idx, bin.value, bin.error,
+                    hist.name,
+                    avWeightBin, sqrt_avW2Bin))
             bin.value = avWeightBin
-            bin.error = sqrt(avW2Bin)
+            bin.error = sqrt_avW2Bin
             applied = True
     
     if applied:
