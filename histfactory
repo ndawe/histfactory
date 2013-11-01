@@ -196,7 +196,7 @@ def process_measurement(m,
                 if not matched(s.name, smooth_histosys_samples):
                     continue
                 for histosys in s.histo_sys:
-                    smooth_shape(s.hist, histosys, smooth_histosys_iterations)
+                    smooth_shape(s, s.hist, histosys, smooth_histosys_iterations)
 
         # prune shapes
         if prune_histosys and matched(c.name, prune_histosys_channels):
@@ -432,12 +432,13 @@ def shape_is_significant(total, high, low, threshold=0.1):
     return False
 
 
-def smooth_shape(nominal, histosys, iterations=1):
+def smooth_shape(sample, nominal, histosys, iterations=1):
     """
     Smooth shape systematics with respect to the nominal histogram by applying
     TH1::Smooth() on the ratio of systematic / nominal.
     """
-    log.info("smoothing HistoSys `{0}`".format(histosys.name))
+    log.info("smoothing HistoSys `{0}` in sample `{1}`".format(
+        histosys.name, sample.name))
     high = histosys.high
     low = histosys.low
 
