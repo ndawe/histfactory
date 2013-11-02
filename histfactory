@@ -3,6 +3,7 @@
 # License: GPLv3
 
 import os
+import math
 from math import sqrt
 from itertools import izip
 from fnmatch import fnmatch
@@ -728,14 +729,92 @@ def diff_measurements(left, right, precision=1E-7):
         diff_func=diff_channels, parent=left, precision=precision)
 
 
+class ufloat(object):
+    def __init__(self, value, stat, syst=None):
+        self.value = value
+        self.stat = stat
+        self.syst = syst
+
+    def __str__(self):
+        return repr(self)
+
+    def __repr__(self):
+        pos = int(math.floor(math.log10(abs(self.stat))))
+        pos = abs(pos) if pos < 0 else 1
+        if self.syst is None:
+            fmt = '${0:.'+str(pos)+'f} \pm {1:.'+str(pos)+'f}$'
+            return fmt.format(self.value, self.stat)
+        spos_up = int(math.floor(math.log10(abs(self.syst[0]))))
+        spos_up = abs(spos_up) if spos_up < 0 else 1
+        spos_dn = int(math.floor(math.log10(abs(self.syst[1]))))
+        spos_dn = abs(spos_dn) if spos_dn < 0 else 1
+        pos = max(pos, spos_up, spos_dn) 
+        fmt = ('${0:.'+str(pos)+'f} \pm {1:.'+str(pos)+'f}$(stat) '
+                '$+{2:.'+str(pos)+'f}-{3:.'+str(pos)+'f}$(sys)')
+        return fmt.format(self.value, self.stat, self.syst[0], self.syst[1])
+
+
 def yields(m, unblind=False):
-
+    
+    channel_names = []
+    sample_names = []
+    yields = {}
+    data = {}
     for c in m.channels:
-        if unblind:
-            print c.data.hist.integral_error()
+        channel_names.append(c.name)
+        if unblind and c.data.hist:
+            data[c.name] = ufloat(*c.data.hist.integral_error())
         for s in c.samples:
-            print s.hist.integral_error()
-
+            if s.name not in sample_names:
+                sample_names.append(s.name)
+            if s.name not in yields:
+                yields[s.name] = {} 
+            integral, stat_error = s.hist.integral_error()
+            # sum systematics in quadrature 
+            ups = [0]
+            dns = [0]
+            for hsys in s.histo_sys:
+                up = hsys.high.Integral() - integral
+                dn = hsys.low.Integral() - integral
+                if up > 0:
+                    ups.append(up**2)
+                else:
+                    dns.append(up**2)
+                if dn > 0:
+                    ups.append(dn**2)
+                else:
+                    dns.append(dn**2)
+            for osys in s.overall_sys:
+                up = integral * (osys.high - 1.)
+                dn = integral * (osys.low - 1.)
+                if up > 0:
+                    ups.append(up**2)
+                else:
+                    dns.append(up**2)
+                if dn > 0:
+                    ups.append(dn**2)
+                else:
+                    dns.append(dn**2)
+            syst_error = (sqrt(sum(ups)), sqrt(sum(dns)))
+            value = ufloat(integral, stat_error, syst_error)
+            yields[s.name][c.name] = value
+    
+    print r"\begin{tabular}{%s}" % '|'.join('c' * (len(channel_names) + 1))
+    print r"\hline" * 2
+    print " & ".join(["Process/Category"] + channel_names) + r"\\ \hline"
+    for sample_name in sample_names:
+        channel_yield = yields[sample_name]
+        print " & ".join([sample_name] +
+            [repr(channel_yield[c]) if c in channel_yield else " "
+                for c in channel_names]) + r"\\"
+    #Total Background & $1218.7\pm 19.9$ & $3137.0\pm 35.3$ & $24249.0\pm 120.9$\\ \hline
+    if unblind:
+        print r"\hline"
+        print " & ".join(["Data"] +
+            [repr(data[c]) if c in data else " "
+                for c in channel_names]) + r"\\"
+    print r"\hline" * 2
+    print r"\end{tabular}"
 
 if __name__ == '__main__':
     
