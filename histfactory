@@ -807,7 +807,8 @@ def yields(m, unblind=False):
         print " & ".join([sample_name] +
             [repr(channel_yield[c]) if c in channel_yield else " "
                 for c in channel_names]) + r"\\"
-    #Total Background & $1218.7\pm 19.9$ & $3137.0\pm 35.3$ & $24249.0\pm 120.9$\\ \hline
+    # total background
+    # total signal
     if unblind:
         print r"\hline"
         print " & ".join(["Data"] +
