@@ -728,6 +728,15 @@ def diff_measurements(left, right, precision=1E-7):
         diff_func=diff_channels, parent=left, precision=precision)
 
 
+def yields(m, unblind=False):
+
+    for c in m.channels:
+        if unblind:
+            print c.data.hist.integral_error()
+        for s in c.samples:
+            print s.hist.integral_error()
+
+
 if __name__ == '__main__':
     
     from rootpy.extern import argparse
@@ -740,6 +749,7 @@ A script for common operations on HistFactory workspaces.
 
 This script can:
 
+* print yields tables
 * patch HistFactory XML files by cleaning up the formatting and fixing known
   issues that trigger HistFactory bugs
 * list the differences between two workspaces (including differences at the
@@ -763,7 +773,19 @@ input files with one or more of the above modifications.""")
 
     subparsers = parser.add_subparsers()
 
+    parser_yields = subparsers.add_parser('yields',
+        description="Print a tables of yields for all samples and channels",
+        add_help=False)
     
+    parser_yields.add_argument('-h', '--help', action='help',
+        help="Show this help message and exit")
+
+    parser_yields.add_argument('--unblind', default=False, action='store_true',
+        help="Include observed data yields in the tables")
+    
+    parser_yields.add_argument('xmlfile', metavar='TOP_LEVEL_MEASUREMENT_XML')
+    parser_yields.set_defaults(op='yields')
+
     parser_diff = subparsers.add_parser('diff',
         description="List the differences between two workspaces",
         add_help=False)
@@ -957,6 +979,14 @@ input files with one or more of the above modifications.""")
     if args.op == 'patch':
         
         patch_xml(args.files, float_precision=args.precision)
+    
+    elif args.op == 'yields':
+        
+        meas = measurements_from_xml(
+            args.xmlfile, cd_parent=True,
+            collect_histograms=True, silence=not args.verbose)
+        for m in meas:
+            yields(m, unblind=args.unblind)
 
     elif args.op == 'diff':
 
