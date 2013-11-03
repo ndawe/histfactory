@@ -16,7 +16,7 @@ from rootpy.utils.silence import silence_sout
 from rootpy.context import do_nothing
 
 try:
-    from collections import OrderedDicts
+    from collections import OrderedDict
 except ImportError:
     from rootpy.extern.ordereddict import OrderedDict
 
