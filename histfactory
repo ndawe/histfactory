@@ -773,18 +773,10 @@ def yields(m, unblind=False):
             # sum systematics in quadrature 
             ups = [0]
             dns = [0]
-            for sys_name, osys, hsys in s.iter_sys():
-                if osys is None:
-                    oup, odn = 1., 1.
-                else:
-                    oup, odn = osys.high, osys.low
-                if hsys is None:
-                    hup, hdn = integral, integral
-                else:
-                    hup = hsys.high.Integral()
-                    hdn = hsys.low.Integral()
-                up = oup * hup - integral
-                dn = odn * hdn - integral
+            for sys_name in s.sys_names():
+                sys_low, sys_high = s.sys_hist(sys_name)
+                up = sys_high.Integral() - integral
+                dn = sys_low.Integral() - integral
                 if up > 0:
                     ups.append(up**2)
                 else:
