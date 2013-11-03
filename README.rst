@@ -6,7 +6,7 @@ A script for common operations on HistFactory workspaces.
 
 This script can:
 
-* print yields LaTeX tables
+* print LaTeX yields tables
 * patch HistFactory XML files by cleaning up the formatting and fixing known
   issues that trigger HistFactory bugs
 * list the differences between two workspaces (including differences at the
