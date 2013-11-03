@@ -615,7 +615,6 @@ def partitioning(left, right):
 
 
 def _diff_sequence_helper(left, right, diff_func, parent=None, **kwargs):
-    
     differ = False
     overlap, left_only, right_only = partitioning(
         left, right)
@@ -639,7 +638,6 @@ def _diff_sequence_helper(left, right, diff_func, parent=None, **kwargs):
 
 
 def diff_histograms(left, right, compare_edges=False, precision=1E-7):
-
     # compare dimensionality
     if left.GetDimension() != right.GetDimension():
         log.warning(
@@ -677,7 +675,6 @@ def diff_histograms(left, right, compare_edges=False, precision=1E-7):
 
 
 def diff_overallsys(left, right, precision=1E-7):
-    
     differ = False
     if not equal(left.low, right.low, precision=precision):
         differ = True
@@ -691,7 +688,6 @@ def diff_overallsys(left, right, precision=1E-7):
 
 
 def diff_histosys(left, right, precision=1E-7):
-
     differ = False
     if diff_histograms(left.low, right.low, precision=precision):
         differ = True
@@ -701,7 +697,6 @@ def diff_histosys(left, right, precision=1E-7):
     
 
 def diff_samples(left, right, precision=1E-7):
-    
     # compare nominal
     differ = diff_histograms(left.hist, right.hist, precision=precision)
     # compare OverallSys
@@ -718,13 +713,11 @@ def diff_samples(left, right, precision=1E-7):
 
 
 def diff_channels(left, right, precision=1E-7):
-
     return _diff_sequence_helper(left.samples, right.samples,
         diff_func=diff_samples, parent=left, precision=precision)
 
 
 def diff_measurements(left, right, precision=1E-7):
-
     return _diff_sequence_helper(left.channels, right.channels,
         diff_func=diff_channels, parent=left, precision=precision)
 
@@ -755,50 +748,51 @@ class ufloat(object):
 
 
 def yields(m, unblind=False):
-    
     channel_names = []
     sample_names = []
     yields = {}
     data = {}
+    # get yields for each sample in each channel
     for c in m.channels:
         channel_names.append(c.name)
         if unblind and c.data.hist:
-            data[c.name] = ufloat(*c.data.hist.integral_error())
+            data[c.name] = ufloat(*c.data.total())
         for s in c.samples:
             if s.name not in sample_names:
                 sample_names.append(s.name)
             if s.name not in yields:
                 yields[s.name] = {} 
-            integral, stat_error = s.hist.integral_error()
-            # sum systematics in quadrature 
-            ups = [0]
-            dns = [0]
-            for sys_name in s.sys_names():
-                sys_low, sys_high = s.sys_hist(sys_name)
-                up = sys_high.Integral() - integral
-                dn = sys_low.Integral() - integral
-                if up > 0:
-                    ups.append(up**2)
-                else:
-                    dns.append(up**2)
-                if dn > 0:
-                    ups.append(dn**2)
-                else:
-                    dns.append(dn**2)
-            syst_error = (sqrt(sum(ups)), sqrt(sum(dns)))
-            value = ufloat(integral, stat_error, syst_error)
+            value = ufloat(*s.total())
             yields[s.name][c.name] = value
-    
+    # get total background and signal
+    total_background = {}
+    total_signal = {}
+    for c in m.channels:
+        value = ufloat(*c.total(where=lambda s: not is_signal(s)))
+        total_background[c.name] = value
+        if c.has_sample_where(is_signal):
+            value = ufloat(*c.total(where=is_signal))
+            total_signal[c.name] = value
+    # print a LaTeX table
     print r"\begin{tabular}{%s}" % '|'.join('c' * (len(channel_names) + 1))
     print r"\hline" * 2
-    print " & ".join(["Process/Category"] + channel_names) + r"\\ \hline"
+    print " & ".join(["Process/Category"] + channel_names) + r"\\"
+    print r"\hline"
     for sample_name in sample_names:
         channel_yield = yields[sample_name]
         print " & ".join([sample_name] +
             [repr(channel_yield[c]) if c in channel_yield else " "
                 for c in channel_names]) + r"\\"
-    # total background
-    # total signal
+    if total_background:
+        print r"\hline"
+        print " & ".join(["Total Background"] + 
+            [repr(total_background[c]) if c in total_background else " "
+                for c in channel_names]) + r"\\"
+    if total_signal:
+        print r"\hline"
+        print " & ".join(["Total Signal"] + 
+            [repr(total_signal[c]) if c in total_signal else " "
+                for c in channel_names]) + r"\\"
     if unblind:
         print r"\hline"
         print " & ".join(["Data"] +
