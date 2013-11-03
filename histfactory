@@ -747,8 +747,8 @@ class ufloat(object):
         spos_dn = int(math.floor(math.log10(abs(self.syst[1]))))
         spos_dn = abs(spos_dn) if spos_dn < 0 else 1
         pos = max(pos, spos_up, spos_dn) 
-        fmt = ('${0:.'+str(pos)+'f} \pm {1:.'+str(pos)+'f}$(stat) '
-                '$+{2:.'+str(pos)+'f}-{3:.'+str(pos)+'f}$(sys)')
+        fmt = ('${0:.'+str(pos)+'f} \pm {1:.'+str(pos)+'f}$ '
+                '${{}}^{{+{2:.'+str(pos)+'f}}}_{{-{3:.'+str(pos)+'f}}}$')
         return fmt.format(self.value, self.stat, self.syst[0], self.syst[1])
 
 
