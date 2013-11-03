@@ -15,6 +15,11 @@ from rootpy.plotting import Hist, Hist2D, Hist3D
 from rootpy.utils.silence import silence_sout
 from rootpy.context import do_nothing
 
+try:
+    from collections import OrderedDicts
+except ImportError:
+    from rootpy.extern.ordereddict import OrderedDict
+
 import logging; log = logging.getLogger(os.path.basename(__file__))
 
 
@@ -747,19 +752,30 @@ class ufloat(object):
         return fmt.format(self.value, self.stat, self.syst[0], self.syst[1])
 
 
-def yields(m, unblind=False):
-    channel_names = []
-    sample_names = []
+def parse_names(names):
+    _names = OrderedDict()
+    if not names:
+        return _names
+    for name in names:
+        in_name, _, out_name = name.partition('::')
+        _names[in_name] = out_name or in_name
+    return _names
+
+
+def yields(m, channel_names=None, sample_names=None, unblind=False):
+    channel_names = parse_names(channel_names)
+    sample_names = parse_names(sample_names)
     yields = {}
     data = {}
     # get yields for each sample in each channel
     for c in m.channels:
-        channel_names.append(c.name)
+        if c.name not in channel_names:
+            channel_names[c.name] = c.name
         if unblind and c.data.hist:
             data[c.name] = ufloat(*c.data.total())
         for s in c.samples:
             if s.name not in sample_names:
-                sample_names.append(s.name)
+                sample_names[s.name] = s.name
             if s.name not in yields:
                 yields[s.name] = {} 
             value = ufloat(*s.total())
@@ -776,28 +792,28 @@ def yields(m, unblind=False):
     # print a LaTeX table
     print r"\begin{tabular}{%s}" % '|'.join('c' * (len(channel_names) + 1))
     print r"\hline" * 2
-    print " & ".join(["Process/Category"] + channel_names) + r"\\"
+    print " & ".join(["Process/Category"] + channel_names.values()) + r"\\"
     print r"\hline"
-    for sample_name in sample_names:
+    for sample_name, out_sample_name in sample_names.items():
         channel_yield = yields[sample_name]
-        print " & ".join([sample_name] +
+        print " & ".join([out_sample_name] +
             [repr(channel_yield[c]) if c in channel_yield else " "
-                for c in channel_names]) + r"\\"
+                for c in channel_names.keys()]) + r"\\"
     if total_background:
         print r"\hline"
         print " & ".join(["Total Background"] + 
             [repr(total_background[c]) if c in total_background else " "
-                for c in channel_names]) + r"\\"
+                for c in channel_names.keys()]) + r"\\"
     if total_signal:
         print r"\hline"
         print " & ".join(["Total Signal"] + 
             [repr(total_signal[c]) if c in total_signal else " "
-                for c in channel_names]) + r"\\"
+                for c in channel_names.keys()]) + r"\\"
     if unblind:
         print r"\hline"
         print " & ".join(["Data"] +
             [repr(data[c]) if c in data else " "
-                for c in channel_names]) + r"\\"
+                for c in channel_names.keys()]) + r"\\"
     print r"\hline" * 2
     print r"\end{tabular}"
 
@@ -843,6 +859,13 @@ input files with one or more of the above modifications.""")
     
     parser_yields.add_argument('-h', '--help', action='help',
         help="Show this help message and exit")
+    
+    parser_yields.add_argument('--sample-names', nargs='*',
+        help="Sample names in the order you want them to appear in the table "
+             "rows. Rename samples with input_name::output_name")
+    parser_yields.add_argument('--channel-names', nargs='*',
+        help="Channel names in the order you want them to appear in the table "
+             "columns. Rename channels with input_name::output_name")
 
     parser_yields.add_argument('--unblind', default=False, action='store_true',
         help="Include observed data yields in the tables")
@@ -1050,7 +1073,10 @@ input files with one or more of the above modifications.""")
             args.xmlfile, cd_parent=True,
             collect_histograms=True, silence=not args.verbose)
         for m in meas:
-            yields(m, unblind=args.unblind)
+            yields(m,
+                sample_names=args.sample_names,
+                channel_names=args.channel_names,
+                unblind=args.unblind)
 
     elif args.op == 'diff':
 
