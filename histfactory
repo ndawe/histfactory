@@ -762,7 +762,10 @@ def parse_names(names):
     return _names
 
 
-def yields(m, channel_names=None, sample_names=None, unblind=False):
+def yields(m,
+           channel_names=None, sample_names=None,
+           unblind=False,
+           xbin1=1, xbin2=-2):
     channel_names = parse_names(channel_names)
     sample_names = parse_names(sample_names)
     yields = {}
@@ -772,22 +775,26 @@ def yields(m, channel_names=None, sample_names=None, unblind=False):
         if c.name not in channel_names:
             channel_names[c.name] = c.name
         if unblind and c.data.hist:
-            data[c.name] = ufloat(*c.data.total())
+            data[c.name] = ufloat(*c.data.total(
+                xbin1=xbin1, xbin2=xbin2))
         for s in c.samples:
             if s.name not in sample_names:
                 sample_names[s.name] = s.name
             if s.name not in yields:
                 yields[s.name] = {} 
-            value = ufloat(*s.total())
+            value = ufloat(*s.total(
+                xbin1=xbin1, xbin2=xbin2))
             yields[s.name][c.name] = value
     # get total background and signal
     total_background = {}
     total_signal = {}
     for c in m.channels:
-        value = ufloat(*c.total(where=lambda s: not is_signal(s)))
+        value = ufloat(*c.total(where=lambda s: not is_signal(s),
+            xbin1=xbin1, xbin2=xbin2))
         total_background[c.name] = value
         if c.has_sample_where(is_signal):
-            value = ufloat(*c.total(where=is_signal))
+            value = ufloat(*c.total(where=is_signal,
+                xbin1=xbin1, xbin2=xbin2))
             total_signal[c.name] = value
     # print a LaTeX table
     print r"\begin{tabular}{%s}" % '|'.join('c' * (len(channel_names) + 1))
@@ -816,6 +823,7 @@ def yields(m, channel_names=None, sample_names=None, unblind=False):
                 for c in channel_names.keys()]) + r"\\"
     print r"\hline" * 2
     print r"\end{tabular}"
+
 
 if __name__ == '__main__':
     
@@ -866,6 +874,11 @@ input files with one or more of the above modifications.""")
     parser_yields.add_argument('--channel-names', nargs='*',
         help="Channel names in the order you want them to appear in the table "
              "columns. Rename channels with input_name::output_name")
+    
+    parser_yields.add_argument('--xbin1', type=int, default=1,
+        help="Bin index along the x-axis to begin integrals (default: 1)")
+    parser_yields.add_argument('--xbin2', type=int, default=-2,
+        help="Bin index along the x-axis to end integrals (default: -2)")
 
     parser_yields.add_argument('--unblind', default=False, action='store_true',
         help="Include observed data yields in the tables")
@@ -1076,6 +1089,8 @@ input files with one or more of the above modifications.""")
             yields(m,
                 sample_names=args.sample_names,
                 channel_names=args.channel_names,
+                xbin1=args.xbin1,
+                xbin2=args.xbin2,
                 unblind=args.unblind)
 
     elif args.op == 'diff':
