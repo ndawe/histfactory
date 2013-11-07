@@ -737,15 +737,24 @@ class ufloat(object):
         return repr(self)
 
     def __repr__(self):
-        pos = int(math.floor(math.log10(abs(self.stat))))
-        pos = abs(pos) if pos < 0 else 1
+        if self.stat == 0:
+            pos = 1
+        else:
+            pos = int(math.floor(math.log10(abs(self.stat))))
+            pos = abs(pos) if pos < 0 else 1
         if self.syst is None:
             fmt = '${0:.'+str(pos)+'f} \pm {1:.'+str(pos)+'f}$'
             return fmt.format(self.value, self.stat)
-        spos_up = int(math.floor(math.log10(abs(self.syst[0]))))
-        spos_up = abs(spos_up) if spos_up < 0 else 1
-        spos_dn = int(math.floor(math.log10(abs(self.syst[1]))))
-        spos_dn = abs(spos_dn) if spos_dn < 0 else 1
+        if self.syst[0] == 0:
+            spos_up = 1
+        else:
+            spos_up = int(math.floor(math.log10(abs(self.syst[0]))))
+            spos_up = abs(spos_up) if spos_up < 0 else 1
+        if self.syst[1] == 0:
+            spos_dn = 1
+        else:
+            spos_dn = int(math.floor(math.log10(abs(self.syst[1]))))
+            spos_dn = abs(spos_dn) if spos_dn < 0 else 1
         pos = max(pos, spos_up, spos_dn) 
         fmt = ('${0:.'+str(pos)+'f} \pm {1:.'+str(pos)+'f}$ '
                 '${{}}^{{+{2:.'+str(pos)+'f}}}_{{-{3:.'+str(pos)+'f}}}$')
@@ -763,8 +772,11 @@ def parse_names(names):
 
 
 def yields(m,
-           channel_names=None, sample_names=None,
+           channels=None,
+           channel_names=None,
+           sample_names=None,
            unblind=False,
+           explode=False,
            xbin1=1, xbin2=-2):
     channel_names = parse_names(channel_names)
     sample_names = parse_names(sample_names)
@@ -772,57 +784,134 @@ def yields(m,
     data = {}
     # get yields for each sample in each channel
     for c in m.channels:
+        if channels and c.name not in channels:
+            continue
         if c.name not in channel_names:
             channel_names[c.name] = c.name
         if unblind and c.data.hist:
-            data[c.name] = ufloat(*c.data.total(
-                xbin1=xbin1, xbin2=xbin2))
+            if explode:
+                nbinsx = c.data.hist.nbins(0, overflow=True)
+                first = xbin1 % nbinsx
+                last = xbin2 % nbinsx
+                contents = []
+                # get contents for each bin
+                for i in xrange(first, last + 1):
+                    contents.append(ufloat(*c.data.total(
+                        xbin1=i, xbin2=i)))
+                data[c.name] = contents
+            else:
+                data[c.name] = ufloat(*c.data.total(
+                    xbin1=xbin1, xbin2=xbin2))
         for s in c.samples:
             if s.name not in sample_names:
                 sample_names[s.name] = s.name
             if s.name not in yields:
-                yields[s.name] = {} 
-            value = ufloat(*s.total(
-                xbin1=xbin1, xbin2=xbin2))
-            yields[s.name][c.name] = value
+                yields[s.name] = {}
+            if explode:
+                nbinsx = s.hist.nbins(0, overflow=True)
+                first = xbin1 % nbinsx
+                last = xbin2 % nbinsx
+                contents = []
+                # get contents for each bin
+                for i in xrange(first, last + 1):
+                    contents.append(ufloat(*s.total(
+                        xbin1=i, xbin2=i)))
+                num_bin_cols = len(contents)
+                yields[s.name][c.name] = contents
+            else:
+                value = ufloat(*s.total(
+                    xbin1=xbin1, xbin2=xbin2))
+                yields[s.name][c.name] = value
     # get total background and signal
     total_background = {}
     total_signal = {}
     for c in m.channels:
-        value = ufloat(*c.total(where=lambda s: not is_signal(s),
-            xbin1=xbin1, xbin2=xbin2))
-        total_background[c.name] = value
-        if c.has_sample_where(is_signal):
+        if channels and c.name not in channels:
+            continue
+        if explode:
+            contents = []
+            # get contents for each bin
+            for i in xrange(first, last + 1):
+                contents.append(ufloat(
+                    *c.total(where=lambda s: not is_signal(s),
+                    xbin1=i, xbin2=i)))
+            total_background[c.name] = contents
+        else:
+            value = ufloat(*c.total(where=lambda s: not is_signal(s),
+                xbin1=xbin1, xbin2=xbin2))
+            total_background[c.name] = value
+        if not c.has_sample_where(is_signal):
+            # don't include signal yields for channels without signal
+            continue
+        if explode:
+            contents = []
+            # get contents for each bin
+            for i in xrange(first, last + 1):
+                contents.append(ufloat(
+                    *c.total(where=lambda s: is_signal(s),
+                    xbin1=i, xbin2=i)))
+            total_signal[c.name] = contents
+        else:
             value = ufloat(*c.total(where=is_signal,
                 xbin1=xbin1, xbin2=xbin2))
             total_signal[c.name] = value
     # print a LaTeX table
-    print r"\begin{tabular}{%s}" % '|'.join('c' * (len(channel_names) + 1))
-    print r"\hline" * 2
-    print " & ".join(["Process/Category"] + channel_names.values()) + r"\\"
-    print r"\hline"
-    for sample_name, out_sample_name in sample_names.items():
-        channel_yield = yields[sample_name]
-        print " & ".join([out_sample_name] +
-            [repr(channel_yield[c]) if c in channel_yield else " "
-                for c in channel_names.keys()]) + r"\\"
-    if total_background:
+    if explode:
+        print r"\begin{tabular}{*{%d}{c|}c}" % (len(channel_names) * num_bin_cols)
+        print r"\hline" * 2
+        print " & ".join(["\multirow{2}{*}{Process/Category}"] + ["\multicolumn{%d}{c|}{%s}" % (num_bin_cols, c) for c in channel_names.values()]) + r"\\"
         print r"\hline"
-        print " & ".join(["Total Background"] + 
-            [repr(total_background[c]) if c in total_background else " "
-                for c in channel_names.keys()]) + r"\\"
-    if total_signal:
+        print " & ".join([" "] + map(str, range(first, last + 1)) * len(channel_names.values()) ) + r"\\"
         print r"\hline"
-        print " & ".join(["Total Signal"] + 
-            [repr(total_signal[c]) if c in total_signal else " "
-                for c in channel_names.keys()]) + r"\\"
-    if unblind:
+        for sample_name, out_sample_name in sample_names.items():
+            channel_yield = yields[sample_name]
+            print " & ".join([out_sample_name] +
+                [" & ".join(map(repr, channel_yield[c])) if c in channel_yield else " & " * (num_bin_cols - 1)
+                    for c in channel_names.keys()]) + r"\\"
+        if total_background:
+            print r"\hline"
+            print " & ".join(["Total Background"] + 
+                [" & ".join(map(repr, total_background[c])) if c in total_background else " & " * (num_bin_cols - 1)
+                    for c in channel_names.keys()]) + r"\\"
+        if total_signal:
+            print r"\hline"
+            print " & ".join(["Total Signal"] + 
+                [" & ".join(map(repr, total_signal[c])) if c in total_signal else " & " * (num_bin_cols - 1)
+                    for c in channel_names.keys()]) + r"\\"
+        if unblind:
+            print r"\hline"
+            print " & ".join(["Data"] +
+                [" & ".join(map(repr, data[c])) if c in data else " & " * (num_bin_cols - 1)
+                    for c in channel_names.keys()]) + r"\\"
+        print r"\hline" * 2
+        print r"\end{tabular}"
+    else:
+        print r"\begin{tabular}{%s}" % '|'.join('c' * (len(channel_names) + 1))
+        print r"\hline" * 2
+        print " & ".join(["Process/Category"] + channel_names.values()) + r"\\"
         print r"\hline"
-        print " & ".join(["Data"] +
-            [repr(data[c]) if c in data else " "
-                for c in channel_names.keys()]) + r"\\"
-    print r"\hline" * 2
-    print r"\end{tabular}"
+        for sample_name, out_sample_name in sample_names.items():
+            channel_yield = yields[sample_name]
+            print " & ".join([out_sample_name] +
+                [repr(channel_yield[c]) if c in channel_yield else " "
+                    for c in channel_names.keys()]) + r"\\"
+        if total_background:
+            print r"\hline"
+            print " & ".join(["Total Background"] + 
+                [repr(total_background[c]) if c in total_background else " "
+                    for c in channel_names.keys()]) + r"\\"
+        if total_signal:
+            print r"\hline"
+            print " & ".join(["Total Signal"] + 
+                [repr(total_signal[c]) if c in total_signal else " "
+                    for c in channel_names.keys()]) + r"\\"
+        if unblind:
+            print r"\hline"
+            print " & ".join(["Data"] +
+                [repr(data[c]) if c in data else " "
+                    for c in channel_names.keys()]) + r"\\"
+        print r"\hline" * 2
+        print r"\end{tabular}"
 
 
 if __name__ == '__main__':
@@ -867,6 +956,9 @@ input files with one or more of the above modifications.""")
     
     parser_yields.add_argument('-h', '--help', action='help',
         help="Show this help message and exit")
+
+    parser_yields.add_argument('--channels', nargs='*',
+        help="Only include these channels in the yields table")
     
     parser_yields.add_argument('--sample-names', nargs='*',
         help="Sample names in the order you want them to appear in the table "
@@ -883,6 +975,9 @@ input files with one or more of the above modifications.""")
     parser_yields.add_argument('--unblind', default=False, action='store_true',
         help="Include observed data yields in the tables")
     
+    parser_yields.add_argument('--explode', default=False, action='store_true',
+        help="Show yields for each bin in separate columns")
+
     parser_yields.add_argument('xmlfile', metavar='TOP_LEVEL_MEASUREMENT_XML')
     parser_yields.set_defaults(op='yields')
 
@@ -1087,11 +1182,13 @@ input files with one or more of the above modifications.""")
             collect_histograms=True, silence=not args.verbose)
         for m in meas:
             yields(m,
+                channels=args.channels,
                 sample_names=args.sample_names,
                 channel_names=args.channel_names,
+                unblind=args.unblind,
+                explode=args.explode,
                 xbin1=args.xbin1,
-                xbin2=args.xbin2,
-                unblind=args.unblind)
+                xbin2=args.xbin2)
 
     elif args.op == 'diff':
 
